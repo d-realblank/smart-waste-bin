@@ -154,10 +154,3 @@ The system uses a modified Traveling Salesman Problem (TSP) algorithm prioritizi
 - Integration with campus facility management system
 - Environmental sensors (temperature, odor detection)
 
-## Contributors
-
-SOEN 422 Final Project Team
-
-## License
-
-MIT License - Educational Project
