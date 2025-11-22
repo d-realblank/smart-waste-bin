@@ -91,5 +91,5 @@ The Smart Waste Bin System is **80% complete** with almost all of the software c
 
 ---
 
-**Status:** Ready for hardware integration and deployment  
+**Status:** Ready for hardware integration 
 **Created:** November 21, 2025
