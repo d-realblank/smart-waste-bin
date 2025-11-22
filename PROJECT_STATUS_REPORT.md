@@ -7,11 +7,9 @@
 
 ## Summary
 
-IoT-based smart waste management system using LilyGO TTGO LoRa32 microcontrollers with HC-SR04 ultrasonic sensors for real-time campus bin monitoring, automated alerts, route optimization, and web-based dashboard management.
+IoT based smart waste management system using LilyGo TTGO LoRa32 microcontrollers with HC-SR04 ultrasonic sensors for real-time campus bin monitoring, automated alerts, route optimization & web based dashboard management.
 
 **Overall Completion: 80%** (Software: 90% | Hardware: 0%)
-
-**System Architecture:** TTGO ESP32 bin nodes → WiFi/HTTP → Node.js/Express API → MongoDB → React Dashboard (WebSocket real-time updates)
 
 ---
 
@@ -85,11 +83,11 @@ IoT-based smart waste management system using LilyGO TTGO LoRa32 microcontroller
 
 ## Conclusion
 
-The Smart Waste Bin System is **80% complete** with nearly all software components ready. The firmware (530+ lines), backend API (20+ endpoints), database schemas (5 models), and React dashboard are fully implemented, tested, and documented. System can be demonstrated without hardware using provided simulation scripts.
+The Smart Waste Bin System is **80% complete** with almost all of the software components ready. The firmware (530+lines) backend API (20+ endpoints) database schemas 5 models React dashboard are fully implemented, tested and documented. System can be demonstrated without the use of any hardware using provided simulation scripts.
 
-**Primary remaining task:** Hardware assembly and integration. Integration is straightforward as firmware is complete and ready to flash.
+**Primary remaining task:** Hardware assembly and integration. Integration is very simple as firmware is complete and ready to flash.
 
-**Project demonstrates:** Separation of concerns, RESTful API design, real-time communication, authentication/security, database optimization, comprehensive documentation (3,000+ lines).
+**Project demonstrates:** Separation of concerns, Design of a new restful API, Design of a real-time communication, Design of Authentication & Security, Optimization of the Database, Comprehensive documentation.
 
 ---
 
