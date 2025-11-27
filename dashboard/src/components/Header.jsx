@@ -12,11 +12,12 @@ import {
 import {
   Notifications as NotificationsIcon,
   AccountCircle,
-} from '@mui/material/Icon';
+  Menu as MenuIcon,
+} from '@mui/icons-material';
 import { useAuth } from '../context/AuthContext';
 import { useSocket } from '../context/SocketContext';
 
-const Header = () => {
+const Header = ({ handleDrawerToggle, drawerWidth }) => {
   const { user, logout } = useAuth();
   const { connected } = useSocket();
   const [anchorEl, setAnchorEl] = React.useState(null);
@@ -36,16 +37,28 @@ const Header = () => {
 
   return (
     <AppBar
-      position="sticky"
+      position="fixed"
       sx={{
+        width: { sm: `calc(100% - ${drawerWidth}px)` },
+        ml: { sm: `${drawerWidth}px` },
         backgroundColor: 'white',
         color: 'text.primary',
         boxShadow: 1,
       }}
     >
       <Toolbar>
+        <IconButton
+          color="inherit"
+          aria-label="open drawer"
+          edge="start"
+          onClick={handleDrawerToggle}
+          sx={{ mr: 2, display: { sm: 'none' } }}
+        >
+          <MenuIcon />
+        </IconButton>
+
         <Typography variant="h6" component="div" sx={{ flexGrow: 1 }}>
-          Smart Waste Management System
+          Smart Waste Management
         </Typography>
 
         <Box sx={{ display: 'flex', alignItems: 'center', gap: 2 }}>

@@ -31,8 +31,9 @@ const Dashboard = () => {
       const response = await axios.get('/api/dashboard/overview');
       setOverview(response.data.data);
     } catch (error) {
-      toast.error('Failed to fetch dashboard data');
-      console.error(error);
+      const msg = error.response?.data?.message || 'Failed to fetch dashboard data';
+      toast.error(msg);
+      console.error('Dashboard fetch error:', error);
     } finally {
       setLoading(false);
     }

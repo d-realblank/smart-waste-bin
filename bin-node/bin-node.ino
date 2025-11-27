@@ -1,32 +1,75 @@
 // ============================================================================
 // Smart Waste Bin System - TTGO Bin Node Firmware
 // ============================================================================
-// Description: Main firmware for LilyGO TTGO T-Display waste bin monitoring
-// Hardware: ESP32, HC-SR04 Ultrasonic Sensor, Built-in TFT Display
-// Features: WiFi communication, Bluetooth Mesh, Real-time fill level detection
+// Description: Main firmware for LilyGO T3 LoRa32 V1.6.1 OLED waste bin monitoring
+// Hardware: ESP32, HC-SR04 Ultrasonic Sensor, Built-in OLED Display (128x64)
+// Board: TTGO T3 LoRa32 V1.6.1 (915MHz)
+// Features: WiFi communication, LoRa capability, Real-time fill level detection
 // ============================================================================
 
 #include <WiFi.h>
 #include <HTTPClient.h>
-#include <TFT_eSPI.h>
+#include <Wire.h>
+#include <U8g2lib.h>
 #include <ArduinoJson.h>
 #include <esp_sleep.h>
+#include <BLEDevice.h>
+#include <BLEUtils.h>
+#include <BLEScan.h>
+#include <BLEAdvertisedDevice.h>
 #include "config.h"
 
 // ============================================================================
-// Hardware Pin Definitions
+// Hardware Pin Definitions - T3 LoRa32 V1.6.1
 // ============================================================================
-#define TRIG_PIN 32          // Ultrasonic sensor trigger pin
-#define ECHO_PIN 33          // Ultrasonic sensor echo pin
-#define LED_PIN 2            // Status LED
+// Ultrasonic Sensor Pins (using available GPIOs)
+#define TRIG_PIN 13          // Ultrasonic sensor trigger pin
+#define ECHO_PIN 15          // Ultrasonic sensor echo pin
+
+// Status LED (built-in LED on T3 LoRa32)
+#define LED_PIN 25           // Built-in blue LED on T3 LoRa32 V1.6.1
+
+// OLED Display Pins (SSD1306 128x64) - I2C
+#define OLED_SDA 21          // I2C Data
+#define OLED_SCL 22          // I2C Clock
+// #define OLED_RST 16       // OLED Reset - Not used on this board version
+
+// LoRa Module Pins (for reference - not used in this version)
+// #define LORA_SCK 5
+// #define LORA_MISO 19
+// #define LORA_MOSI 27
+// #define LORA_CS 18
+// #define LORA_RST 23
+// #define LORA_DIO0 26
+
+// Battery ADC Pin
+#define BATTERY_PIN 35       // ADC pin for battery voltage
+
 #define BIN_HEIGHT_CM 100    // Total bin height in centimeters
+
+// ============================================================================
+// OLED Display Configuration
+// ============================================================================
+// U8g2 Constructor for ESP32 HW I2C
+// Rotation R0, Reset Pin NONE (avoid conflict), Clock 22, Data 21
+U8G2_SSD1306_128X64_NONAME_F_HW_I2C u8g2(U8G2_R0, U8X8_PIN_NONE, OLED_SCL, OLED_SDA);
 
 // ============================================================================
 // Global Objects
 // ============================================================================
-TFT_eSPI tft = TFT_eSPI();   // Display object
 HTTPClient http;
 WiFiClient wifiClient;
+
+bool displayAvailable = false;  // Track if display initialized successfully
+
+// ============================================================================
+// BLE Globals
+// ============================================================================
+BLEScan* pBLEScan;
+unsigned long lastBLEScanTime = 0;
+bool deviceConnected = false;
+
+
 
 // ============================================================================
 // System State Variables
@@ -61,6 +104,13 @@ void enterDeepSleep();
 void handleServerResponse(String response);
 int getBatteryLevel();
 
+// BLE Functions
+void setupBLE();
+void scanForNeighbors();
+void sendNeighborUpdate(String binId, float fillLevel, int batteryLevel);
+
+
+
 // ============================================================================
 // Setup Function
 // ============================================================================
@@ -91,6 +141,10 @@ void setup() {
     setupDisplay();
     setupWiFi();
     setupSensor();
+    
+    if (ENABLE_BLE_MESH) {
+        setupBLE();
+    }
     
     currentState.status = "NORMAL";
     Serial.println("\nSetup complete - System ready\n");
@@ -148,6 +202,18 @@ void loop() {
         setupWiFi();
     }
     
+    // BLE Mesh / Gateway Logic
+    if (ENABLE_BLE_MESH) {
+        // If connected to WiFi, act as a Gateway: Scan for neighbors
+        if (WiFi.status() == WL_CONNECTED) {
+            if (currentTime - lastBLEScanTime >= 15000) { // Scan every 15 seconds
+                scanForNeighbors();
+                lastBLEScanTime = currentTime;
+            }
+        }
+    }
+
+    
     delay(1000); // Main loop delay
 }
 
@@ -192,23 +258,29 @@ void setupWiFi() {
 // Display Setup
 // ============================================================================
 void setupDisplay() {
-    Serial.println("Initializing display...");
+    Serial.println("Initializing OLED display (U8g2)...");
+    displayAvailable = false;
     
-    tft.init();
-    tft.setRotation(1);
-    tft.fillScreen(TFT_BLACK);
-    tft.setTextColor(TFT_WHITE, TFT_BLACK);
-    tft.setTextSize(2);
+    // U8g2 handles reset and I2C init automatically
+    // It is more robust for ESP32 LoRa boards
+    u8g2.begin();
+    displayAvailable = true;
+    
+    Serial.println("Display initialized!");
+    
+    // Clear buffer
+    u8g2.clearBuffer();
     
     // Splash screen
-    tft.setCursor(10, 40);
-    tft.println("Smart Bin");
-    tft.setCursor(10, 70);
-    tft.setTextSize(1);
-    tft.println("Initializing...");
+    u8g2.setFont(u8g2_font_ncenB10_tr); // Bold font
+    u8g2.drawStr(10, 20, "Smart Bin");
     
+    u8g2.setFont(u8g2_font_6x10_tf); // Small font
+    u8g2.drawStr(10, 40, "Initializing...");
+    
+    u8g2.sendBuffer();
     delay(2000);
-    Serial.println("Display initialized");
+    Serial.println("OLED display initialized successfully!");
 }
 
 // ============================================================================
@@ -295,68 +367,60 @@ float calculateFillLevel(float distance) {
 }
 
 // ============================================================================
-// Update TFT Display
+// Update OLED Display
 // ============================================================================
 void updateDisplay() {
-    tft.fillScreen(TFT_BLACK);
+    u8g2.clearBuffer();
     
-    // Display bin ID
-    tft.setTextSize(1);
-    tft.setTextColor(TFT_CYAN, TFT_BLACK);
-    tft.setCursor(5, 5);
-    tft.print("Bin: ");
-    tft.println(currentState.binId);
+    // Display bin ID (top line)
+    u8g2.setFont(u8g2_font_6x10_tf);
+    u8g2.setCursor(0, 10);
+    u8g2.print("Bin: ");
+    u8g2.print(currentState.binId);
     
-    // Display fill level with color coding
-    tft.setTextSize(3);
-    tft.setCursor(20, 30);
-    
-    if (currentState.fillLevel >= FULL_THRESHOLD) {
-        tft.setTextColor(TFT_RED, TFT_BLACK);
-    } else if (currentState.fillLevel >= WARNING_THRESHOLD) {
-        tft.setTextColor(TFT_YELLOW, TFT_BLACK);
-    } else {
-        tft.setTextColor(TFT_GREEN, TFT_BLACK);
-    }
+    // Display fill level (large, centered)
+    u8g2.setFont(u8g2_font_ncenB14_tr);
+    u8g2.setCursor(15, 35);
     
     if (currentState.fillLevel >= 0) {
-        tft.print(currentState.fillLevel, 1);
-        tft.println("%");
+        u8g2.print(currentState.fillLevel, 1);
+        u8g2.print("%");
     } else {
-        tft.println("ERROR");
+        u8g2.print("ERROR");
     }
     
-    // Display status
-    tft.setTextSize(1);
-    tft.setCursor(5, 70);
-    tft.setTextColor(TFT_WHITE, TFT_BLACK);
-    tft.print("Status: ");
-    tft.println(currentState.status);
-    
-    // Display distance
-    tft.setCursor(5, 85);
-    tft.print("Distance: ");
-    tft.print(currentState.distance, 1);
-    tft.println(" cm");
+    // Display status indicator
+    u8g2.setFont(u8g2_font_6x10_tf);
+    u8g2.setCursor(0, 50);
+    if (currentState.fillLevel >= FULL_THRESHOLD) {
+        u8g2.print("[FULL]");
+    } else if (currentState.fillLevel >= WARNING_THRESHOLD) {
+        u8g2.print("[WARN]");
+    } else {
+        u8g2.print("[OK]");
+    }
+    u8g2.print(" ");
+    u8g2.print(currentState.distance, 0);
+    u8g2.print("cm");
     
     // Display WiFi status
-    tft.setCursor(5, 100);
+    u8g2.setCursor(0, 62);
     if (WiFi.status() == WL_CONNECTED) {
-        tft.setTextColor(TFT_GREEN, TFT_BLACK);
-        tft.print("WiFi: ");
-        tft.print(WiFi.RSSI());
-        tft.println(" dBm");
+        u8g2.print("WiFi:");
+        u8g2.print(WiFi.RSSI());
+        u8g2.print("dBm");
     } else {
-        tft.setTextColor(TFT_RED, TFT_BLACK);
-        tft.println("WiFi: Disconnected");
+        u8g2.print("WiFi:OFF");
     }
     
     // Display battery level
-    tft.setCursor(5, 115);
-    tft.setTextColor(TFT_WHITE, TFT_BLACK);
-    tft.print("Battery: ");
-    tft.print(currentState.batteryLevel);
-    tft.println("%");
+    u8g2.setCursor(80, 10);
+    u8g2.print("Bat:");
+    u8g2.print(currentState.batteryLevel);
+    u8g2.print("%");
+    
+    // Update the display
+    u8g2.sendBuffer();
 }
 
 // ============================================================================
@@ -520,11 +584,10 @@ void enterDeepSleep() {
     Serial.println("Entering deep sleep mode...");
     
     // Display sleep message
-    tft.fillScreen(TFT_BLACK);
-    tft.setTextSize(2);
-    tft.setTextColor(TFT_YELLOW, TFT_BLACK);
-    tft.setCursor(20, 60);
-    tft.println("SLEEPING...");
+    u8g2.clearBuffer();
+    u8g2.setFont(u8g2_font_ncenB10_tr);
+    u8g2.drawStr(10, 30, "SLEEPING");
+    u8g2.sendBuffer();
     
     delay(2000);
     
@@ -533,4 +596,109 @@ void enterDeepSleep() {
     
     // Enter deep sleep
     esp_deep_sleep_start();
+}
+
+// ============================================================================
+// BLE Mesh / Gateway Implementation
+// ============================================================================
+
+// Callback class for BLE Scans
+class MyAdvertisedDeviceCallbacks: public BLEAdvertisedDeviceCallbacks {
+    void onResult(BLEAdvertisedDevice advertisedDevice) {
+        // We only care about devices with Manufacturer Data
+        if (advertisedDevice.haveManufacturerData()) {
+            String dataStr = advertisedDevice.getManufacturerData();
+            
+            // Check if it's one of our bins (Prefix "BIN:")
+            // Note: Manufacturer data often has 2 bytes ID at start, so we check content
+            // Our format: "BIN:<ID>:<FILL>:<BAT>"
+            
+            // Simple check for our signature
+            if (dataStr.indexOf("BIN:") >= 0) {
+                Serial.print("BLE MESH: Found Neighbor Bin: ");
+                Serial.println(advertisedDevice.getAddress().toString().c_str());
+                Serial.println("Data: " + dataStr);
+                
+                // Parse Data
+                // Format: "BIN:BIN_002:45.5:98"
+                int firstColon = dataStr.indexOf(':');
+                int secondColon = dataStr.indexOf(':', firstColon + 1);
+                int thirdColon = dataStr.indexOf(':', secondColon + 1);
+                
+                if (firstColon > 0 && secondColon > 0 && thirdColon > 0) {
+                    String binId = dataStr.substring(firstColon + 1, secondColon);
+                    String fillStr = dataStr.substring(secondColon + 1, thirdColon);
+                    String batStr = dataStr.substring(thirdColon + 1);
+                    
+                    float fillLevel = fillStr.toFloat();
+                    int batteryLevel = batStr.toInt();
+                    
+                    // If we are connected to WiFi, relay this data (Gateway Mode)
+                    if (WiFi.status() == WL_CONNECTED) {
+                        sendNeighborUpdate(binId, fillLevel, batteryLevel);
+                    }
+                }
+            }
+        }
+    }
+};
+
+void setupBLE() {
+    Serial.println("Initializing BLE Gateway...");
+    
+    BLEDevice::init(BLE_MESH_NAME);
+    
+    // Setup Scanning
+    pBLEScan = BLEDevice::getScan();
+    pBLEScan->setAdvertisedDeviceCallbacks(new MyAdvertisedDeviceCallbacks());
+    pBLEScan->setActiveScan(true); // Active scan uses more power, but gets results faster
+    pBLEScan->setInterval(100);
+    pBLEScan->setWindow(99);  // less or equal setInterval value
+    
+    Serial.println("BLE Gateway Initialized");
+}
+
+void scanForNeighbors() {
+    Serial.println("BLE MESH: Scanning for neighbors...");
+    BLEScanResults* foundDevices = pBLEScan->start(BLE_SCAN_TIME, false);
+    Serial.print("BLE MESH: Scan done! Devices found: ");
+    Serial.println(foundDevices->getCount());
+    
+    // Clean up RAM
+    pBLEScan->clearResults();
+}
+
+void sendNeighborUpdate(String binId, float fillLevel, int batteryLevel) {
+    Serial.println("BLE MESH: Relaying data for " + binId);
+    
+    // Create JSON payload
+    StaticJsonDocument<512> doc;
+    doc["binId"] = binId;
+    doc["fillLevel"] = fillLevel;
+    doc["batteryLevel"] = batteryLevel;
+    doc["status"] = (fillLevel >= FULL_THRESHOLD) ? "FULL" : (fillLevel >= WARNING_THRESHOLD ? "WARNING" : "NORMAL");
+    doc["isFull"] = (fillLevel >= FULL_THRESHOLD);
+    doc["timestamp"] = millis();
+    doc["relayedBy"] = BIN_ID; // Mark as relayed
+    
+    String jsonPayload;
+    serializeJson(doc, jsonPayload);
+    
+    // Send HTTP POST request
+    String url = String(SERVER_URL) + "/api/bins/status";
+    HTTPClient relayHttp;
+    relayHttp.begin(wifiClient, url);
+    relayHttp.addHeader("Content-Type", "application/json");
+    relayHttp.addHeader("X-API-Key", API_KEY);
+    
+    int httpResponseCode = relayHttp.POST(jsonPayload);
+    
+    if (httpResponseCode > 0) {
+        Serial.println("BLE MESH: Relay successful for " + binId);
+    } else {
+        Serial.print("BLE MESH: Relay failed: ");
+        Serial.println(relayHttp.errorToString(httpResponseCode));
+    }
+    
+    relayHttp.end();
 }

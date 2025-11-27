@@ -49,6 +49,10 @@ export const AuthProvider = ({ children }) => {
       
       localStorage.setItem('token', token);
       setToken(token);
+      
+      // Set header immediately to prevent race conditions
+      axios.defaults.headers.common['Authorization'] = `Bearer ${token}`;
+      
       setUser(user);
       
       return { success: true };
@@ -68,6 +72,10 @@ export const AuthProvider = ({ children }) => {
       
       localStorage.setItem('token', token);
       setToken(token);
+      
+      // Set header immediately to prevent race conditions
+      axios.defaults.headers.common['Authorization'] = `Bearer ${token}`;
+      
       setUser(user);
       
       return { success: true };

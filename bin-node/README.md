@@ -1,11 +1,12 @@
-# Bin Node - TTGO Firmware Setup Guide
+# Bin Node - T3 LoRa32 V1.6.1 Firmware Setup Guide
 
 ## Hardware Requirements
 
 ### Components
-- **LilyGO TTGO T-Display ESP32** (1 unit)
-  - ESP32-based microcontroller with built-in TFT display
-  - WiFi and Bluetooth integrated
+- **LilyGO T3 LoRa32 V1.6.1** (1 unit)
+  - ESP32-based microcontroller with built-in OLED display (128x64 SSD1306)
+  - WiFi, Bluetooth, and LoRa (915MHz) integrated
+  - Frequency: 915MHz (North America version)
   
 - **HC-SR04 Ultrasonic Sensor** (1 unit)
   - Range: 2cm - 400cm
@@ -14,20 +15,29 @@
 - **Connection Wires**
   - 4x Dupont wires for sensor connection
   
-- **USB-C Cable** (for programming)
+- **Micro-USB Cable** (for programming)
 
 - **Power Supply** (optional for deployment)
   - USB battery bank, or
-  - 3.7V LiPo battery (JST connector compatible)
+  - 3.7V LiPo battery (JST 1.25mm connector)
 
 ### Pin Connections
 
-| HC-SR04 Pin | TTGO Pin | Function |
-|-------------|----------|----------|
-| VCC | 5V | Power |
-| GND | GND | Ground |
-| TRIG | GPIO 32 | Trigger signal |
-| ECHO | GPIO 33 | Echo signal |
+| HC-SR04 Pin | T3 LoRa32 Pin | GPIO | Function |
+|-------------|---------------|------|----------|
+| VCC | 3.3V | - | Power (3.3V) |
+| GND | GND | - | Ground |
+| TRIG | GPIO 13 | 13 | Trigger signal |
+| ECHO | GPIO 15 | 15 | Echo signal |
+
+**Note:** The T3 LoRa32 V1.6.1 uses 3.3V logic. The HC-SR04 typically needs 5V power but can work with 3.3V for the trigger/echo signals.
+
+### Built-in Components
+
+- **OLED Display:** SSD1306 128x64 I2C (SDA=GPIO21, SCL=GPIO22, RST=None/Internal)
+- **Blue LED:** GPIO 25
+- **LoRa Module:** SX1276 (915MHz) - not used in this version but available for future enhancements
+- **Battery Monitor:** GPIO 35 (ADC)
 
 ## Software Requirements
 
@@ -51,9 +61,9 @@
    
    Go to `Sketch` → `Include Library` → `Manage Libraries` and install:
    
-   - **TFT_eSPI** (by Bodmer)
-     - Version 2.5.0 or later
-     - For driving the TFT display
+   - **U8g2** (by oliver)
+     - For driving the OLED display
+     - More robust for ESP32 LoRa boards
    
    - **ArduinoJson** (by Benoit Blanchon)
      - Version 6.x
@@ -62,32 +72,25 @@
    - **WiFi** (included with ESP32 core)
    
    - **HTTPClient** (included with ESP32 core)
+   
+   - **Wire** (included with ESP32 core)
+     - For I2C communication with OLED
 
-### Configure TFT_eSPI Library
+### Configure Display Library
 
-The TFT_eSPI library needs to be configured for TTGO T-Display:
+The T3 LoRa32 V1.6.1 uses an SSD1306 OLED display. We use the **U8g2** library which is more robust for this board:
 
-1. Locate the library folder:
-   - Windows: `Documents/Arduino/libraries/TFT_eSPI/`
-   - macOS: `~/Documents/Arduino/libraries/TFT_eSPI/`
-   - Linux: `~/Arduino/libraries/TFT_eSPI/`
+1. **Install U8g2 Library**
+   - Go to `Sketch` → `Include Library` → `Manage Libraries`
+   - Search for "U8g2"
+   - Install "U8g2" by oliver
 
-2. Edit `User_Setup_Select.h`:
-   - Comment out default setup: `//#include <User_Setup.h>`
-   - Uncomment TTGO setup: `#include <User_Setups/Setup25_TTGO_T_Display.h>`
+2. **Library Configuration**
+   - The code is pre-configured for T3 LoRa32 V1.6.1
+   - Uses hardware I2C (SDA=21, SCL=22)
+   - Constructor: `U8G2_SSD1306_128X64_NONAME_F_HW_I2C`
 
-3. Or manually edit `User_Setup.h` with these settings:
-   ```cpp
-   #define ST7789_DRIVER
-   #define TFT_WIDTH  135
-   #define TFT_HEIGHT 240
-   #define TFT_MOSI 19
-   #define TFT_SCLK 18
-   #define TFT_CS   5
-   #define TFT_DC   16
-   #define TFT_RST  23
-   #define TFT_BL   4
-   ```
+**Note:** The previous Adafruit SSD1306 library was causing initialization loops on some boards. U8g2 handles the reset sequence more reliably.
 
 ## Configuration
 
@@ -124,19 +127,21 @@ The TFT_eSPI library needs to be configured for TTGO T-Display:
 
 2. **Select Board and Port**
    - Go to `Tools` → `Board` → `ESP32 Arduino`
-   - Select: **ESP32 Dev Module** or **TTGO T1**
+   - Select: **ESP32 Dev Module**
    - Go to `Tools` → `Port`
-   - Select the appropriate COM/Serial port
+   - Select the appropriate COM/Serial port (may appear as CP210x or similar)
 
-3. **Upload Settings**
+3. **Upload Settings for T3 LoRa32 V1.6.1**
    ```
    Board: ESP32 Dev Module
-   Upload Speed: 921600
+   Upload Speed: 921600 (or 115200 if upload fails)
    CPU Frequency: 240MHz
    Flash Frequency: 80MHz
    Flash Mode: QIO
-   Flash Size: 4MB
+   Flash Size: 4MB (32Mb)
    Partition Scheme: Default 4MB with spiffs
+   Core Debug Level: None
+   PSRAM: Disabled
    ```
 
 4. **Compile and Upload**
@@ -174,14 +179,17 @@ The TFT_eSPI library needs to be configured for TTGO T-Display:
 
 ### Troubleshooting
 
-**Display not working:**
-- Verify TFT_eSPI library is properly configured
+**OLED Display not working:**
+- Verify U8g2 library is installed
 - Check board selection (must be ESP32)
-- Try example sketch: File → Examples → TFT_eSPI → 160x128 → TFT_Print_Test
+- Check I2C connections (SDA=21, SCL=22)
+- Try running I2C scanner to verify address (should be 0x3C)
+- Try example sketch: File → Examples → U8g2 → full_buffer → GraphicsTest
 
 **Sensor readings incorrect:**
-- Verify pin connections (TRIG=32, ECHO=33)
-- Check sensor is receiving 5V power
+- Verify pin connections (TRIG=GPIO13, ECHO=GPIO15)
+- Check sensor is receiving 3.3V power (HC-SR04 can work with 3.3V but 5V is better)
+- If readings are unstable, consider using a 5V HC-SR04 with a voltage divider on ECHO pin
 - Ensure no obstacles near sensor
 - Adjust BIN_HEIGHT_CM in config.h
 
