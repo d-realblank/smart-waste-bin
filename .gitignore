@@ -41,3 +41,4 @@ coverage/
 *.bak
 *.tmp
 .cache/
+server/package-lock.json
