@@ -8,7 +8,7 @@ const alertSchema = new mongoose.Schema({
     binId: {
         type: String,
         required: true,
-        ref: 'Bin',
+        trim: true,
         index: true
     },
     alertType: {
@@ -88,8 +88,7 @@ alertSchema.methods.resolve = function(userId, notes) {
 // Static method to get active alerts
 alertSchema.statics.getActiveAlerts = function() {
     return this.find({ status: 'ACTIVE' })
-        .sort({ priority: -1, createdAt: -1 })
-        .populate('binId');
+        .sort({ priority: -1, createdAt: -1 });
 };
 
 // Static method to get critical alerts

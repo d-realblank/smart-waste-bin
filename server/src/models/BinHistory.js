@@ -19,7 +19,7 @@ const binHistorySchema = new mongoose.Schema({
     },
     distance: {
         type: Number,
-        required: true
+        required: false
     },
     status: {
         type: String,

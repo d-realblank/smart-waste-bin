@@ -5,6 +5,10 @@
 const express = require('express');
 const router = express.Router();
 const routeController = require('../controllers/routeController');
+const { authenticate } = require('../middleware/auth');
+
+// Protect all routes
+router.use(authenticate);
 
 router.get('/', routeController.getAllRoutes);
 router.get('/today', routeController.getTodaysRoutes);

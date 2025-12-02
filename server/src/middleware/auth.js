@@ -11,25 +11,36 @@ exports.authenticate = async (req, res, next) => {
         const token = req.header('Authorization')?.replace('Bearer ', '');
         
         if (!token) {
+            console.log('Auth failed: No token provided');
             return res.status(401).json({
                 success: false,
                 message: 'No authentication token provided'
             });
         }
         
-        const decoded = jwt.verify(token, process.env.JWT_SECRET);
-        const user = await User.findById(decoded.userId);
-        
-        if (!user || !user.isActive) {
+        try {
+            const decoded = jwt.verify(token, process.env.JWT_SECRET);
+            const user = await User.findById(decoded.userId);
+            
+            if (!user || !user.isActive) {
+                console.log('Auth failed: User not found or inactive', decoded.userId);
+                return res.status(401).json({
+                    success: false,
+                    message: 'Invalid authentication token'
+                });
+            }
+            
+            req.user = user;
+            next();
+        } catch (err) {
+            console.log('Auth failed: Token verification error', err.message);
             return res.status(401).json({
                 success: false,
                 message: 'Invalid authentication token'
             });
         }
-        
-        req.user = user;
-        next();
     } catch (error) {
+        console.log('Auth failed: General error', error.message);
         res.status(401).json({
             success: false,
             message: 'Invalid authentication token'

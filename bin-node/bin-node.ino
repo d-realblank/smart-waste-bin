@@ -107,7 +107,7 @@ int getBatteryLevel();
 // BLE Functions
 void setupBLE();
 void scanForNeighbors();
-void sendNeighborUpdate(String binId, float fillLevel, int batteryLevel);
+void sendNeighborUpdate(String binId, float fillLevel, int batteryLevel, String location);
 
 
 
@@ -444,6 +444,7 @@ void sendStatusUpdate() {
     doc["batteryLevel"] = currentState.batteryLevel;
     doc["timestamp"] = millis();
     doc["rssi"] = WiFi.RSSI();
+    doc["location"] = BIN_LOCATION;
     
     String jsonPayload;
     serializeJson(doc, jsonPayload);
@@ -602,21 +603,38 @@ void enterDeepSleep() {
 // BLE Mesh / Gateway Implementation
 // ============================================================================
 
-// Callback class for BLE Scans
-class MyAdvertisedDeviceCallbacks: public BLEAdvertisedDeviceCallbacks {
-    void onResult(BLEAdvertisedDevice advertisedDevice) {
-        // We only care about devices with Manufacturer Data
-        if (advertisedDevice.haveManufacturerData()) {
-            String dataStr = advertisedDevice.getManufacturerData();
+void setupBLE() {
+    Serial.println("Initializing BLE Gateway...");
+    
+    BLEDevice::init(BLE_MESH_NAME);
+    
+    // Setup Scanning
+    pBLEScan = BLEDevice::getScan();
+    // pBLEScan->setAdvertisedDeviceCallbacks(new MyAdvertisedDeviceCallbacks()); // Removed callback
+    pBLEScan->setActiveScan(true); // Active scan uses more power, but gets results faster
+    pBLEScan->setInterval(100);
+    pBLEScan->setWindow(99);  // less or equal setInterval value
+    
+    Serial.println("BLE Gateway Initialized");
+}
+
+void scanForNeighbors() {
+    Serial.println("BLE MESH: Scanning for neighbors...");
+    BLEScanResults* foundDevices = pBLEScan->start(BLE_SCAN_TIME, false);
+    Serial.print("BLE MESH: Scan done! Devices found: ");
+    int count = foundDevices->getCount();
+    Serial.println(count);
+    
+    for (int i = 0; i < count; i++) {
+        BLEAdvertisedDevice device = foundDevices->getDevice(i);
+        
+        if (device.haveManufacturerData()) {
+            String dataStr = device.getManufacturerData();
             
             // Check if it's one of our bins (Prefix "BIN:")
-            // Note: Manufacturer data often has 2 bytes ID at start, so we check content
-            // Our format: "BIN:<ID>:<FILL>:<BAT>"
-            
-            // Simple check for our signature
             if (dataStr.indexOf("BIN:") >= 0) {
                 Serial.print("BLE MESH: Found Neighbor Bin: ");
-                Serial.println(advertisedDevice.getAddress().toString().c_str());
+                Serial.println(device.getAddress().toString().c_str());
                 Serial.println("Data: " + dataStr);
                 
                 // Parse Data
@@ -635,40 +653,22 @@ class MyAdvertisedDeviceCallbacks: public BLEAdvertisedDeviceCallbacks {
                     
                     // If we are connected to WiFi, relay this data (Gateway Mode)
                     if (WiFi.status() == WL_CONNECTED) {
-                        sendNeighborUpdate(binId, fillLevel, batteryLevel);
+                        String location = "Unknown";
+                        if (device.haveName()) {
+                            location = device.getName().c_str();
+                        }
+                        sendNeighborUpdate(binId, fillLevel, batteryLevel, location);
                     }
                 }
             }
         }
     }
-};
-
-void setupBLE() {
-    Serial.println("Initializing BLE Gateway...");
-    
-    BLEDevice::init(BLE_MESH_NAME);
-    
-    // Setup Scanning
-    pBLEScan = BLEDevice::getScan();
-    pBLEScan->setAdvertisedDeviceCallbacks(new MyAdvertisedDeviceCallbacks());
-    pBLEScan->setActiveScan(true); // Active scan uses more power, but gets results faster
-    pBLEScan->setInterval(100);
-    pBLEScan->setWindow(99);  // less or equal setInterval value
-    
-    Serial.println("BLE Gateway Initialized");
-}
-
-void scanForNeighbors() {
-    Serial.println("BLE MESH: Scanning for neighbors...");
-    BLEScanResults* foundDevices = pBLEScan->start(BLE_SCAN_TIME, false);
-    Serial.print("BLE MESH: Scan done! Devices found: ");
-    Serial.println(foundDevices->getCount());
     
     // Clean up RAM
     pBLEScan->clearResults();
 }
 
-void sendNeighborUpdate(String binId, float fillLevel, int batteryLevel) {
+void sendNeighborUpdate(String binId, float fillLevel, int batteryLevel, String location) {
     Serial.println("BLE MESH: Relaying data for " + binId);
     
     // Create JSON payload
@@ -680,6 +680,11 @@ void sendNeighborUpdate(String binId, float fillLevel, int batteryLevel) {
     doc["isFull"] = (fillLevel >= FULL_THRESHOLD);
     doc["timestamp"] = millis();
     doc["relayedBy"] = BIN_ID; // Mark as relayed
+    
+    // Add location if available
+    if (location != "Unknown" && location.length() > 0) {
+        doc["location"] = location;
+    }
     
     String jsonPayload;
     serializeJson(doc, jsonPayload);

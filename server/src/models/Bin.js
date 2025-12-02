@@ -110,6 +110,9 @@ binSchema.methods.updateStatus = function(data) {
     this.distance = data.distance || this.distance;
     this.batteryLevel = data.batteryLevel || this.batteryLevel;
     this.rssi = data.rssi || this.rssi;
+    if (data.location) {
+        this.location = data.location;
+    }
     this.lastUpdate = new Date();
     
     // Auto-determine status

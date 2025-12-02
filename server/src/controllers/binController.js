@@ -80,7 +80,7 @@ exports.createBin = async (req, res, next) => {
 // @access  API Key
 exports.updateBinStatus = async (req, res, next) => {
     try {
-        const { binId, fillLevel, distance, status, batteryLevel, rssi } = req.body;
+        const { binId, fillLevel, distance, status, batteryLevel, rssi, location } = req.body;
         
         let bin = await Bin.findOne({ binId });
         
@@ -88,7 +88,7 @@ exports.updateBinStatus = async (req, res, next) => {
         if (!bin) {
             bin = await Bin.create({
                 binId,
-                location: 'Unknown',
+                location: location || 'Unknown',
                 fillLevel,
                 distance,
                 status,
@@ -97,13 +97,20 @@ exports.updateBinStatus = async (req, res, next) => {
             });
         } else {
             // Update existing bin
-            await bin.updateStatus({
+            const updateData = {
                 fillLevel,
                 distance,
                 status,
                 batteryLevel,
                 rssi
-            });
+            };
+            
+            // Update location if provided
+            if (location) {
+                updateData.location = location;
+            }
+            
+            await bin.updateStatus(updateData);
         }
         
         // Save to history
@@ -139,6 +146,31 @@ exports.updateBinStatus = async (req, res, next) => {
                 });
                 
                 io.emit('newAlert', alert);
+            }
+        }
+
+        // Check for full bin alert (Added for relayed data)
+        if (status === 'FULL' || fillLevel >= 85) {
+             const existingAlert = await Alert.findOne({
+                binId,
+                alertType: 'BIN_FULL',
+                status: 'ACTIVE'
+            });
+            
+            if (!existingAlert) {
+                console.log(`[BinController] Creating new alert for bin ${binId} (Level: ${fillLevel}%)`);
+                const alert = await Alert.create({
+                    binId,
+                    alertType: 'BIN_FULL',
+                    priority: 'HIGH',
+                    message: 'Bin has reached full capacity',
+                    fillLevel
+                });
+                console.log('[BinController] Alert created:', alert);
+                
+                io.emit('newAlert', alert);
+            } else {
+                console.log(`[BinController] Alert already exists for bin ${binId}`);
             }
         }
         

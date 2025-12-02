@@ -75,9 +75,17 @@ void setup() {
     currentState.batteryLevel = 100;
     currentState.status = "INITIALIZING";
     
+    Serial.println("Initializing Display...");
     setupDisplay();
+    Serial.println("Display Initialized.");
+
+    Serial.println("Initializing Sensor...");
     setupSensor();
+    Serial.println("Sensor Initialized.");
+
+    Serial.println("Initializing BLE...");
     setupBLE();
+    Serial.println("BLE Initialized.");
     
     currentState.status = "NORMAL";
     Serial.println("Setup complete - Advertising started");
@@ -133,12 +141,24 @@ void setupBLE() {
     BLEDevice::init(BLE_DEVICE_NAME);
     pAdvertising = BLEDevice::getAdvertising();
     
-    // Initial update
-    updateBLEAdvertising();
+    // Initial payload setup
+    String payload = "BIN:" + String(BIN_ID) + ":" + String(currentState.fillLevel, 1) + ":" + String(currentState.batteryLevel);
+    
+    BLEAdvertisementData oAdvertisementData = BLEAdvertisementData();
+    oAdvertisementData.setFlags(0x04); // BR_EDR_NOT_SUPPORTED
+    oAdvertisementData.setManufacturerData(payload.c_str());
+    
+    pAdvertising->setAdvertisementData(oAdvertisementData);
+    
+    // Use Scan Response for Location Data (Device Name)
+    BLEAdvertisementData oScanResponseData = BLEAdvertisementData();
+    oScanResponseData.setName(BIN_LOCATION);
+    pAdvertising->setScanResponseData(oScanResponseData);
     
     pAdvertising->setScanResponse(true);
     pAdvertising->setMinPreferred(0x06);
     pAdvertising->setMinPreferred(0x12);
+    
     BLEDevice::startAdvertising();
     Serial.println("BLE Advertising started");
 }
@@ -151,8 +171,13 @@ void updateBLEAdvertising() {
     oAdvertisementData.setFlags(0x04); // BR_EDR_NOT_SUPPORTED
     oAdvertisementData.setManufacturerData(payload.c_str());
     
+    // Ensure Scan Response (Location) is also set
+    BLEAdvertisementData oScanResponseData = BLEAdvertisementData();
+    oScanResponseData.setName(BIN_LOCATION);
+    
     pAdvertising->stop(); // Stop before updating
     pAdvertising->setAdvertisementData(oAdvertisementData);
+    pAdvertising->setScanResponseData(oScanResponseData);
     pAdvertising->start(); // Restart
     
     Serial.println("BLE Updated: " + payload);

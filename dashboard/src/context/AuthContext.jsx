@@ -20,7 +20,27 @@ export const AuthProvider = ({ children }) => {
   useEffect(() => {
     if (token) {
       axios.defaults.headers.common['Authorization'] = `Bearer ${token}`;
+      
+      // Add interceptor to handle 401s globally
+      const interceptor = axios.interceptors.response.use(
+        (response) => response,
+        (error) => {
+          if (error.response && error.response.status === 401) {
+            // Clear auth state if token is invalid
+            localStorage.removeItem('token');
+            delete axios.defaults.headers.common['Authorization'];
+            setToken(null);
+            setUser(null);
+          }
+          return Promise.reject(error);
+        }
+      );
+
       loadUser();
+      
+      return () => {
+        axios.interceptors.response.eject(interceptor);
+      };
     } else {
       setLoading(false);
     }

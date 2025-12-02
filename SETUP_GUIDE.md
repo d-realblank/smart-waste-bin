@@ -36,14 +36,25 @@ SOEN422Final/
 
 ### Option A: Local MongoDB
 
+**macOS:**
 ```bash
-# Install MongoDB (macOS)
+# Install MongoDB
 brew tap mongodb/brew
 brew install mongodb-community
 
 # Start MongoDB
 brew services start mongodb-community
+```
 
+**Windows:**
+1. Download and install MongoDB Community Server from the [official website](https://www.mongodb.com/try/download/community).
+2. Install `mongosh` (MongoDB Shell) if not included or via npm:
+```bash
+npm install -g mongosh
+```
+
+**Verify Installation:**
+```bash
 # Verify it's running
 mongosh
 # Should connect successfully

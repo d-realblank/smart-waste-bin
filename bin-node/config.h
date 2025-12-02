@@ -17,7 +17,7 @@
 // ============================================================================
 // Server Configuration
 // ============================================================================
-// IMPORTANT: Replace 'YOUR_COMPUTER_IP' with your actual computer IP address
+// IMPORTANT: Replace with your actual computer IP address
 // Example: "http://192.168.1.15:3000"
 // Do NOT use "localhost" - that refers to the ESP32 itself!
 #define SERVER_URL "http://192.168.0.116:3000"  
@@ -39,7 +39,7 @@
 // ============================================================================
 // Timing Configuration (milliseconds)
 // ============================================================================
-#define REPORT_INTERVAL 300000           // Status update interval (5 minutes)
+#define REPORT_INTERVAL 30000            // Status update interval (30 seconds)
 #define DISPLAY_UPDATE_INTERVAL 2000     // Display refresh rate (2 seconds)
 #define SENSOR_READ_INTERVAL 1000        // Sensor reading interval (1 second)
 

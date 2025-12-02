@@ -32,6 +32,7 @@ import {
 import axios from 'axios';
 import { toast } from 'react-toastify';
 import { format } from 'date-fns';
+import { useSocket } from '../context/SocketContext';
 
 const BinsPage = () => {
   const [bins, setBins] = useState([]);
@@ -43,21 +44,58 @@ const BinsPage = () => {
     location: '',
     height: 100,
   });
+  
+  const { socket } = useSocket();
 
   useEffect(() => {
     fetchBins();
+    
+    // Poll for updates every 30 seconds
+    const interval = setInterval(() => {
+      console.log('Polling for bin updates...');
+      fetchBins(true);
+    }, 30000);
+    
+    return () => clearInterval(interval);
   }, []);
 
-  const fetchBins = async () => {
+  // Listen for real-time updates
+  useEffect(() => {
+    if (!socket) return;
+
+    const handleBinUpdate = (updatedBin) => {
+      console.log('Received real-time bin update:', updatedBin);
+      setBins(prevBins => {
+        const index = prevBins.findIndex(b => b.binId === updatedBin.binId);
+        if (index !== -1) {
+          const newBins = [...prevBins];
+          newBins[index] = updatedBin;
+          return newBins;
+        } else {
+          return [updatedBin, ...prevBins];
+        }
+      });
+    };
+
+    socket.on('binUpdate', handleBinUpdate);
+
+    return () => {
+      socket.off('binUpdate', handleBinUpdate);
+    };
+  }, [socket]);
+
+  const fetchBins = async (isBackground = false) => {
     try {
-      setLoading(true);
-      const response = await axios.get('/api/bins');
+      if (!isBackground) setLoading(true);
+      // Add timestamp to prevent caching
+      const response = await axios.get(`/api/bins?_t=${new Date().getTime()}`);
       setBins(response.data.data);
     } catch (error) {
       console.error('Error fetching bins:', error);
-      toast.error('Failed to load bins');
+      // Only show toast on initial load failure to avoid spamming
+      if (!isBackground) toast.error('Failed to load bins');
     } finally {
-      setLoading(false);
+      if (!isBackground) setLoading(false);
     }
   };
 
