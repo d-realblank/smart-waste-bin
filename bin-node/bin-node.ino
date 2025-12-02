@@ -17,6 +17,7 @@
 #include <BLEUtils.h>
 #include <BLEScan.h>
 #include <BLEAdvertisedDevice.h>
+#include <Preferences.h>
 #include "config.h"
 
 // ============================================================================
@@ -45,7 +46,7 @@
 // Battery ADC Pin
 #define BATTERY_PIN 35       // ADC pin for battery voltage
 
-#define BIN_HEIGHT_CM 100    // Total bin height in centimeters
+// #define BIN_HEIGHT_CM 100    // Total bin height in centimeters - Moved to config.h and global variable
 
 // ============================================================================
 // OLED Display Configuration
@@ -59,6 +60,7 @@ U8G2_SSD1306_128X64_NONAME_F_HW_I2C u8g2(U8G2_R0, U8X8_PIN_NONE, OLED_SCL, OLED_
 // ============================================================================
 HTTPClient http;
 WiFiClient wifiClient;
+Preferences preferences;
 
 bool displayAvailable = false;  // Track if display initialized successfully
 
@@ -67,16 +69,25 @@ bool displayAvailable = false;  // Track if display initialized successfully
 // ============================================================================
 BLEScan* pBLEScan;
 BLEAdvertising* pAdvertising;
+BLEServer* pServer;
+BLECharacteristic* pConfigCharacteristic;
 unsigned long lastBLEScanTime = 0;
 unsigned long lastAdvertiseUpdate = 0;
 bool deviceConnected = false;
 bool isGatewayMode = false;
 
-
+// Pending Command for Relay (Gateway Mode)
+String pendingCommandTarget = "";
+String pendingCommandType = "";
+String pendingCommandValue = "";
 
 // ============================================================================
 // System State Variables
 // ============================================================================
+// Configurable Parameters
+int binHeight = BIN_HEIGHT_CM;
+unsigned long reportInterval = REPORT_INTERVAL;
+
 struct BinState {
     String binId;
     float fillLevel;         // Percentage (0-100)
@@ -133,6 +144,12 @@ void setup() {
     pinMode(LED_PIN, OUTPUT);
     digitalWrite(LED_PIN, LOW);
     
+    // Load Configuration from NVS (Non-Volatile Storage)
+    preferences.begin("bin-config", false);
+    binHeight = preferences.getInt("height", BIN_HEIGHT_CM);
+    reportInterval = preferences.getULong("interval", REPORT_INTERVAL);
+    Serial.println("Config Loaded - Height: " + String(binHeight) + "cm, Interval: " + String(reportInterval) + "ms");
+
     // Initialize bin state
     currentState.binId = BIN_ID;
     currentState.fillLevel = 0;
@@ -219,7 +236,7 @@ void loop() {
         }
         
         // Send status update to server
-        if (currentTime - lastReportTime >= REPORT_INTERVAL) {
+        if (currentTime - lastReportTime >= reportInterval) {
             sendStatusUpdate();
             lastReportTime = currentTime;
         }
@@ -383,7 +400,7 @@ float calculateFillLevel(float distance) {
     
     // Calculate fill level
     // Bin is full when distance is small, empty when distance is large
-    float emptyDistance = BIN_HEIGHT_CM;
+    float emptyDistance = binHeight;
     float fullDistance = 5; // Minimum distance when full (5cm from sensor)
     
     if (distance >= emptyDistance) {
@@ -432,6 +449,8 @@ void updateDisplay() {
     }
     u8g2.print(" ");
     u8g2.print(currentState.distance, 0);
+    u8g2.print("/");
+    u8g2.print(binHeight);
     u8g2.print("cm");
     
     // Display WiFi status or BLE Mode
@@ -479,6 +498,8 @@ void sendStatusUpdate() {
     doc["timestamp"] = millis();
     doc["rssi"] = WiFi.RSSI();
     doc["location"] = BIN_LOCATION;
+    doc["binHeight"] = binHeight;
+    doc["reportInterval"] = reportInterval;
     
     String jsonPayload;
     serializeJson(doc, jsonPayload);
@@ -582,14 +603,42 @@ void handleServerResponse(String response) {
     
     // Check for commands
     if (doc.containsKey("command")) {
-        String command = doc["command"];
-        Serial.print("Received command: ");
-        Serial.println(command);
+        JsonObject cmd = doc["command"];
+        String target = cmd["target"];
+        String type = cmd["type"];
+        String value = cmd["value"].as<String>();
         
-        if (command == "RESET") {
-            ESP.restart();
-        } else if (command == "SLEEP") {
-            enterDeepSleep();
+        Serial.print("Received command for ");
+        Serial.println(target);
+        
+        if (target == BIN_ID) {
+            // Command for ME (Gateway)
+            if (type == "REBOOT") {
+                Serial.println("Rebooting...");
+                delay(1000);
+                ESP.restart();
+            } else if (type == "HEIGHT") {
+                int newHeight = value.toInt();
+                if (newHeight > 10 && newHeight < 500) {
+                    binHeight = newHeight;
+                    preferences.putInt("height", binHeight);
+                    Serial.println("Updated Bin Height to: " + String(binHeight));
+                }
+            } else if (type == "INTERVAL") {
+                int newInterval = value.toInt();
+                if (newInterval > 1000) {
+                    reportInterval = newInterval;
+                    preferences.putULong("interval", reportInterval);
+                    Serial.println("Updated Report Interval to: " + String(reportInterval));
+                }
+            }
+            // Handle other local commands...
+        } else {
+            // Command for REMOTE NODE (Relay)
+            Serial.println("Queueing relay command for " + target);
+            pendingCommandTarget = target;
+            pendingCommandType = type;
+            pendingCommandValue = value;
         }
     }
 }
@@ -651,11 +700,66 @@ void setupBLEScanner() {
     Serial.println("BLE Gateway Initialized");
 }
 
+// Callback for Config Characteristic (Node Mode)
+class ConfigCallbacks: public BLECharacteristicCallbacks {
+    void onWrite(BLECharacteristic *pCharacteristic) {
+        String value = pCharacteristic->getValue();
+        if (value.length() > 0) {
+            String command = value;
+            Serial.println("BLE Config Received: " + command);
+            
+            // Parse Command "TYPE:VALUE"
+            int split = command.indexOf(':');
+            if (split > 0) {
+                String type = command.substring(0, split);
+                String val = command.substring(split + 1);
+                
+                if (type == "REBOOT") {
+                    Serial.println("Rebooting via BLE...");
+                    delay(500);
+                    ESP.restart();
+                } else if (type == "HEIGHT") {
+                    int newHeight = val.toInt();
+                    if (newHeight > 10 && newHeight < 500) {
+                        binHeight = newHeight;
+                        preferences.putInt("height", binHeight);
+                        Serial.println("Updated Bin Height to: " + String(binHeight));
+                    }
+                } else if (type == "INTERVAL") {
+                    int newInterval = val.toInt();
+                    if (newInterval > 1000) {
+                        reportInterval = newInterval;
+                        preferences.putULong("interval", reportInterval);
+                        Serial.println("Updated Report Interval to: " + String(reportInterval));
+                    }
+                }
+                // Handle other commands...
+            }
+        }
+    }
+};
+
 void setupBLEAdvertiser() {
-    Serial.println("Initializing BLE Node (Advertiser)...");
+    Serial.println("Initializing BLE Node (Advertiser + Server)...");
     
-    // BLEDevice::init(BLE_MESH_NAME); // Already initialized in setup()
+    // Create Server
+    pServer = BLEDevice::createServer();
+    
+    // Create Service
+    BLEService *pService = pServer->createService(BLE_CONFIG_SERVICE_UUID);
+    
+    // Create Characteristic
+    pConfigCharacteristic = pService->createCharacteristic(
+                                         BLE_CONFIG_CHAR_UUID,
+                                         BLECharacteristic::PROPERTY_WRITE
+                                       );
+    pConfigCharacteristic->setCallbacks(new ConfigCallbacks());
+    
+    pService->start();
+    
+    // Setup Advertising
     pAdvertising = BLEDevice::getAdvertising();
+    pAdvertising->addServiceUUID(BLE_CONFIG_SERVICE_UUID); // Advertise Service
     
     // Initial payload setup
     String payload = "BIN:" + String(BIN_ID) + ":" + String(currentState.fillLevel, 1) + ":" + String(currentState.batteryLevel);
@@ -739,6 +843,32 @@ void scanForNeighbors() {
                             location = device.getName().c_str();
                         }
                         sendNeighborUpdate(binId, fillLevel, batteryLevel, location);
+                        
+                        // Check if we have a pending command for this bin
+                        if (pendingCommandTarget == binId) {
+                            Serial.println("Found target for pending command! Connecting...");
+                            
+                            BLEClient*  pClient  = BLEDevice::createClient();
+                            if (pClient->connect(&device)) {
+                                Serial.println("Connected to Node");
+                                
+                                BLERemoteService* pRemoteService = pClient->getService(BLE_CONFIG_SERVICE_UUID);
+                                if (pRemoteService) {
+                                    BLERemoteCharacteristic* pRemoteChar = pRemoteService->getCharacteristic(BLE_CONFIG_CHAR_UUID);
+                                    if (pRemoteChar) {
+                                        String cmdStr = pendingCommandType + ":" + pendingCommandValue;
+                                        pRemoteChar->writeValue(cmdStr.c_str(), cmdStr.length());
+                                        Serial.println("Command Written: " + cmdStr);
+                                        
+                                        // Clear pending command
+                                        pendingCommandTarget = "";
+                                    }
+                                }
+                                pClient->disconnect();
+                            } else {
+                                Serial.println("Failed to connect to Node");
+                            }
+                        }
                     }
                 }
             }
@@ -781,6 +911,12 @@ void sendNeighborUpdate(String binId, float fillLevel, int batteryLevel, String 
     
     if (httpResponseCode > 0) {
         Serial.println("BLE MESH: Relay successful for " + binId);
+        
+        // Check response for commands
+        if (httpResponseCode == 200) {
+            String response = relayHttp.getString();
+            handleServerResponse(response);
+        }
     } else {
         Serial.print("BLE MESH: Relay failed: ");
         Serial.println(relayHttp.errorToString(httpResponseCode));

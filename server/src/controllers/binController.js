@@ -5,6 +5,7 @@
 const Bin = require('../models/Bin');
 const Alert = require('../models/Alert');
 const { BinHistory } = require('../models/BinHistory');
+const PendingCommand = require('../models/PendingCommand');
 
 // @desc    Get all bins
 // @route   GET /api/bins
@@ -80,7 +81,7 @@ exports.createBin = async (req, res, next) => {
 // @access  API Key
 exports.updateBinStatus = async (req, res, next) => {
     try {
-        const { binId, fillLevel, distance, status, batteryLevel, rssi, location } = req.body;
+        const { binId, fillLevel, distance, status, batteryLevel, rssi, location, binHeight, reportInterval } = req.body;
         
         let bin = await Bin.findOne({ binId });
         
@@ -93,7 +94,9 @@ exports.updateBinStatus = async (req, res, next) => {
                 distance,
                 status,
                 batteryLevel,
-                rssi
+                rssi,
+                binHeight: binHeight || 100,
+                reportInterval: reportInterval || 30000
             });
         } else {
             // Update existing bin
@@ -102,7 +105,9 @@ exports.updateBinStatus = async (req, res, next) => {
                 distance,
                 status,
                 batteryLevel,
-                rssi
+                rssi,
+                binHeight,
+                reportInterval
             };
             
             // Update location if provided
@@ -174,10 +179,73 @@ exports.updateBinStatus = async (req, res, next) => {
             }
         }
         
-        res.json({
+        // Check for pending commands
+        const pendingCommand = await PendingCommand.findOne({ 
+            binId, 
+            status: 'PENDING' 
+        }).sort({ createdAt: 1 });
+
+        const responseData = {
             success: true,
             message: 'Status updated successfully',
             data: bin
+        };
+
+        if (pendingCommand) {
+            responseData.command = {
+                id: pendingCommand._id,
+                type: pendingCommand.type,
+                value: pendingCommand.value,
+                target: binId
+            };
+            
+            // Mark as sent
+            pendingCommand.status = 'SENT';
+            await pendingCommand.save();
+            
+            // Optimistically update bin config in DB
+            if (pendingCommand.type === 'HEIGHT') {
+                bin.binHeight = parseInt(pendingCommand.value);
+                await bin.save();
+            } else if (pendingCommand.type === 'INTERVAL') {
+                bin.reportInterval = parseInt(pendingCommand.value);
+                await bin.save();
+            }
+            
+            console.log(`[BinController] Sent command ${pendingCommand.type} to ${binId}`);
+        }
+        
+        res.json(responseData);
+    } catch (error) {
+        next(error);
+    }
+};
+
+// @desc    Queue a command for a bin
+// @route   POST /api/bins/:binId/command
+// @access  Private
+exports.queueCommand = async (req, res, next) => {
+    try {
+        const { type, value } = req.body;
+        const { binId } = req.params;
+        
+        if (!['SET_INTERVAL', 'REBOOT', 'SET_THRESHOLD', 'HEIGHT', 'INTERVAL'].includes(type)) {
+            return res.status(400).json({
+                success: false,
+                message: 'Invalid command type'
+            });
+        }
+        
+        const command = await PendingCommand.create({
+            binId,
+            type,
+            value
+        });
+        
+        res.status(201).json({
+            success: true,
+            message: 'Command queued successfully',
+            data: command
         });
     } catch (error) {
         next(error);

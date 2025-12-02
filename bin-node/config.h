@@ -56,6 +56,8 @@
 #define ENABLE_BLE_MESH true            // Enable Bluetooth mesh networking
 #define BLE_MESH_NAME "SmartBin_Mesh"   // Mesh network name
 #define BLE_SERVICE_UUID "4fafc201-1fb5-459e-8fcc-c5c9c331914b" // Unique Service UUID
+#define BLE_CONFIG_SERVICE_UUID "4fafc201-1fb5-459e-8fcc-c5c9c331914c" // Config Service
+#define BLE_CONFIG_CHAR_UUID "beb5483e-36e1-4688-b7f5-ea07361b26a8"    // Config Characteristic
 #define BLE_SCAN_TIME 5                 // Scan time in seconds
 #define BLE_ADVERTISE_INTERVAL 2000     // Advertise interval in ms
 

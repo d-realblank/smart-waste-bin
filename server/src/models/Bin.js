@@ -74,6 +74,10 @@ const binSchema = new mongoose.Schema({
         type: Number,
         default: 100 // in centimeters
     },
+    reportInterval: {
+        type: Number,
+        default: 30000 // in milliseconds
+    },
     isActive: {
         type: Boolean,
         default: true
@@ -112,6 +116,12 @@ binSchema.methods.updateStatus = function(data) {
     this.rssi = data.rssi || this.rssi;
     if (data.location) {
         this.location = data.location;
+    }
+    if (data.binHeight) {
+        this.binHeight = data.binHeight;
+    }
+    if (data.reportInterval) {
+        this.reportInterval = data.reportInterval;
     }
     this.lastUpdate = new Date();
     

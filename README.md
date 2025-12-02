@@ -6,7 +6,7 @@ Campus waste management is inefficient; custodians have to check every bin regul
 
 ## Proposed Solution
 
-A distributed IoT system using sensor-enabled bins with LilyGO TTGO microcontrollers and ultrasonic sensors to detect waste levels in real-time. The system optimizes collection routes and sends alerts to custodians through a web dashboard.
+A distributed IoT system using sensor-enabled bins with LilyGO TTGO microcontrollers and ultrasonic sensors to detect waste levels in real-time. The system sends alerts to custodians through a web dashboard.
 
 ## System Architecture
 
@@ -23,6 +23,11 @@ The system uses a **Gateway-Node** topology to extend range and reduce power con
 ## Key Features
 
 - **Unified Firmware**: Single firmware (`bin-node`) automatically detects WiFi availability to switch between **Gateway Mode** and **BLE Node Mode**.
+- **Two-Way Communication**: 
+    - **Uplink**: Sensor data (Fill Level, Battery) flows from Node -> Gateway -> Server.
+    - **Downlink**: Commands (Reboot, Config) flow from Dashboard -> Server -> Gateway -> Node.
+- **Remote Configuration**: Change bin height and report intervals directly from the dashboard.
+- **Persistent Settings**: Configuration changes are saved to the ESP32's non-volatile memory (NVS).
 - **Dynamic Location**: Bins transmit their configured location name wirelessly; no hardcoding required on the server.
 - **Real-time Monitoring**: Ultrasonic sensors detect bin fill levels (0-100%).
 - **Smart Alerts**: Automatic generation of alerts for "Full" bins or "Low Battery", pushed instantly to the dashboard via WebSockets.
@@ -98,6 +103,23 @@ npm run dev
 2. Configure `WIFI_SSID` and `WIFI_PASSWORD`.
 3. Set `BIN_ID` and `BIN_LOCATION`.
 4. Upload to your ESP32 board.
+   - **Gateway**: Will connect to WiFi automatically.
+   - **Node**: Will fail WiFi (or if credentials omitted) and switch to BLE advertising mode.
+
+## Usage Guide
+
+### Dashboard Controls
+- **Reboot**: Click the restart icon on a bin card to remotely reboot the device.
+- **Configure**: Click the gear icon to change:
+    - **Bin Height**: Total height of the bin (cm) for accurate fill calculation.
+    - **Report Interval**: How often (seconds) the bin wakes up to send data.
+- **Empty Bin**: Click the trash can icon to mark a bin as emptied (resolves alerts).
+
+### BLE Mesh / Gateway Behavior
+- **Gateway**: Scans for neighbors every 15 seconds. Relays data immediately to server. Checks for pending commands in the server response.
+- **Node**: Advertises data for 5 seconds, then sleeps. Wakes up based on `REPORT_INTERVAL`.
+- **Command Relay**: Commands for BLE nodes are queued on the server. The Gateway picks them up during the next status update and writes them to the Node via BLE.
+
    - **Gateway**: Will connect to WiFi and show "GW: -xx dBm".
    - **Node**: If WiFi fails, will switch to "Mode: BLE Node".
 
@@ -127,34 +149,27 @@ npm run dev
 ## Communication Protocol
 
 ### Uplink (Bin → Server)
-- **Status Update**: Periodic (every 5 minutes)
-- **Alert**: Immediate when bin reaches 80% capacity
-- **Health Check**: Response to server ping
-
-### Downlink (Server → Bin)
-- **Configuration Update**: New reporting intervals
-- **System Health Query**: Request bin diagnostics
-- **Firmware Update Notification**: OTA update availability
+- **Status Update**: Periodic (every 30 seconds)
+- **Alert**: Immediate when bin reaches 85% capacity or Low Battery
+- **Relay Data**: Gateway forwards data from nearby BLE nodes
 
 ## Data Flow
 
 1. **Bin Node** measures fill level via ultrasonic sensor
-2. **Local Display** shows current status on LCD
-3. **WiFi Transmission** sends data to campus server
-4. **Server Processing** stores data, analyzes trends, optimizes routes
+2. **Local Display** shows current status on OLED
+3. **Transmission**:
+   - **Gateway**: Sends data directly to server via WiFi
+   - **Node**: Advertises data via BLE; Gateway picks it up and relays it
+4. **Server Processing** stores data and checks for alert conditions
 5. **Dashboard Update** reflects real-time status via WebSocket
 6. **Alert Generation** notifies custodians when action needed
 
-## Route Optimization
-
-The system uses a modified Traveling Salesman Problem (TSP) algorithm prioritizing:
-- Bins above 80% capacity (urgent)
-- Geographic proximity (efficiency)
-- Historical fill patterns (prediction)
-
 ## Future Enhancements
 
-- Machine learning for predictive fill patterns
+- **Route Optimization**: AI-driven collection route planning using TSP algorithm
+- **Downlink Control**: Remote configuration of reporting intervals and thresholds
+- **OTA Updates**: Over-the-air firmware updates
+- **Machine learning**: Predictive fill patterns based on historical data
 - Solar panel integration for sustainable power
 - Mobile app for custodians
 - Integration with campus facility management system

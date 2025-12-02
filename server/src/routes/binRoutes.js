@@ -20,6 +20,7 @@ router.post('/', binController.createBin);
 router.put('/:binId', binController.updateBin);
 router.delete('/:binId', binController.deleteBin);
 router.post('/:binId/empty', binController.markBinEmptied);
+router.post('/:binId/command', binController.queueCommand);
 router.get('/:binId/history', binController.getBinHistory);
 
 module.exports = router;

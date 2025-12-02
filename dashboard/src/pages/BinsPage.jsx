@@ -28,6 +28,8 @@ import {
   BatteryFull as BatteryIcon,
   SignalCellularAlt as SignalIcon,
   DeleteSweep as EmptyIcon,
+  RestartAlt as RebootIcon,
+  Settings as SettingsIcon,
 } from '@mui/icons-material';
 import axios from 'axios';
 import { toast } from 'react-toastify';
@@ -45,6 +47,13 @@ const BinsPage = () => {
     height: 100,
   });
   
+  const [configDialogOpen, setConfigDialogOpen] = useState(false);
+  const [configBin, setConfigBin] = useState(null);
+  const [configData, setConfigData] = useState({
+    height: 100,
+    interval: 30,
+  });
+
   const { socket } = useSocket();
 
   useEffect(() => {
@@ -172,6 +181,66 @@ const BinsPage = () => {
     }
   };
 
+  const handleReboot = async (binId) => {
+    if (window.confirm('Are you sure you want to reboot this bin?')) {
+      try {
+        await axios.post(`/api/bins/${binId}/command`, { type: 'REBOOT', value: 'true' });
+        toast.success('Reboot command sent');
+      } catch (error) {
+        console.error('Error sending reboot command:', error);
+        toast.error('Failed to send reboot command');
+      }
+    }
+  };
+
+  const handleOpenConfigDialog = (bin) => {
+    setConfigBin(bin);
+    setConfigData({
+      height: bin.binHeight || 100,
+      interval: bin.reportInterval ? bin.reportInterval / 1000 : 30,
+    });
+    setConfigDialogOpen(true);
+  };
+
+  const handleCloseConfigDialog = () => {
+    setConfigDialogOpen(false);
+    setConfigBin(null);
+  };
+
+  const handleConfigChange = (e) => {
+    const { name, value } = e.target;
+    setConfigData({
+      ...configData,
+      [name]: value,
+    });
+  };
+
+  const handleSaveConfig = async () => {
+    try {
+      // Send Height Command
+      if (configData.height) {
+        await axios.post(`/api/bins/${configBin.binId}/command`, { 
+          type: 'HEIGHT', 
+          value: configData.height.toString() 
+        });
+      }
+      
+      // Send Interval Command (convert seconds to ms)
+      if (configData.interval) {
+        await axios.post(`/api/bins/${configBin.binId}/command`, { 
+          type: 'INTERVAL', 
+          value: (configData.interval * 1000).toString() 
+        });
+      }
+
+      toast.success('Configuration commands sent');
+      handleCloseConfigDialog();
+    } catch (error) {
+      console.error('Error sending config commands:', error);
+      toast.error('Failed to send configuration');
+    }
+  };
+
   const getStatusColor = (status) => {
     switch (status) {
       case 'FULL': return 'error';
@@ -227,12 +296,15 @@ const BinsPage = () => {
                   <Typography color="text.secondary" gutterBottom>
                     Location: {bin.location}
                   </Typography>
+                  <Typography variant="caption" color="text.secondary">
+                    Height: {bin.binHeight || 100}cm
+                  </Typography>
                   
                   <Box sx={{ mt: 2, mb: 1 }}>
                     <Box sx={{ display: 'flex', justifyContent: 'space-between', mb: 0.5 }}>
                       <Typography variant="body2">Fill Level</Typography>
                       <Typography variant="body2" fontWeight="bold">
-                        {bin.fillLevel}%
+                        {Number(bin.fillLevel).toFixed(1)}%
                       </Typography>
                     </Box>
                     <LinearProgress 
@@ -264,15 +336,32 @@ const BinsPage = () => {
                 </CardContent>
                 
                 <CardActions sx={{ justifyContent: 'space-between', px: 2, pb: 2 }}>
-                  <Tooltip title="Mark as Emptied">
-                    <IconButton 
-                      color="primary" 
-                      onClick={() => handleEmptyBin(bin.binId)}
-                      disabled={bin.fillLevel === 0}
-                    >
-                      <EmptyIcon />
-                    </IconButton>
-                  </Tooltip>
+                  <Box>
+                    <Tooltip title="Mark as Emptied">
+                      <IconButton 
+                        color="primary" 
+                        onClick={() => handleEmptyBin(bin.binId)}
+                        disabled={bin.fillLevel === 0}
+                      >
+                        <EmptyIcon />
+                      </IconButton>
+                    </Tooltip>
+                    <Tooltip title="Reboot Bin">
+                      <IconButton 
+                        color="warning" 
+                        onClick={() => handleReboot(bin.binId)}
+                      >
+                        <RebootIcon />
+                      </IconButton>
+                    </Tooltip>
+                    <Tooltip title="Configure Bin">
+                      <IconButton 
+                        onClick={() => handleOpenConfigDialog(bin)}
+                      >
+                        <SettingsIcon />
+                      </IconButton>
+                    </Tooltip>
+                  </Box>
                   <Box>
                     <Tooltip title="Edit">
                       <IconButton onClick={() => handleOpenDialog(bin)}>
@@ -335,6 +424,45 @@ const BinsPage = () => {
           <Button onClick={handleCloseDialog}>Cancel</Button>
           <Button onClick={handleSubmit} variant="contained">
             {editingBin ? 'Update' : 'Create'}
+          </Button>
+        </DialogActions>
+      </Dialog>
+
+      {/* Config Dialog */}
+      <Dialog open={configDialogOpen} onClose={handleCloseConfigDialog}>
+        <DialogTitle>Configure Bin: {configBin?.binId}</DialogTitle>
+        <DialogContent>
+          <Typography variant="body2" color="textSecondary" sx={{ mb: 2 }}>
+            These settings will be sent to the bin as commands. They will take effect when the bin next reports in.
+          </Typography>
+          <TextField
+            autoFocus
+            margin="dense"
+            name="height"
+            label="Bin Height (cm)"
+            type="number"
+            fullWidth
+            variant="outlined"
+            value={configData.height}
+            onChange={handleConfigChange}
+            sx={{ mb: 2 }}
+          />
+          <TextField
+            margin="dense"
+            name="interval"
+            label="Report Interval (seconds)"
+            type="number"
+            fullWidth
+            variant="outlined"
+            value={configData.interval}
+            onChange={handleConfigChange}
+            helperText="How often the bin sends status updates"
+          />
+        </DialogContent>
+        <DialogActions>
+          <Button onClick={handleCloseConfigDialog}>Cancel</Button>
+          <Button onClick={handleSaveConfig} variant="contained" color="primary">
+            Send Commands
           </Button>
         </DialogActions>
       </Dialog>
