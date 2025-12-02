@@ -26,7 +26,7 @@ The system uses a **Gateway-Node** topology to extend range and reduce power con
 - **Two-Way Communication**: 
     - **Uplink**: Sensor data (Fill Level, Battery) flows from Node -> Gateway -> Server.
     - **Downlink**: Commands (Reboot, Config) flow from Dashboard -> Server -> Gateway -> Node.
-- **Remote Configuration**: Change bin height and report intervals directly from the dashboard.
+- **Remote Configuration**: Change bin height, report intervals, and **alert thresholds** directly from the dashboard.
 - **Persistent Settings**: Configuration changes are saved to the ESP32's non-volatile memory (NVS).
 - **Dynamic Location**: Bins transmit their configured location name wirelessly; no hardcoding required on the server.
 - **Real-time Monitoring**: Ultrasonic sensors detect bin fill levels (0-100%).
@@ -113,6 +113,7 @@ npm run dev
 - **Configure**: Click the gear icon to change:
     - **Bin Height**: Total height of the bin (cm) for accurate fill calculation.
     - **Report Interval**: How often (seconds) the bin wakes up to send data.
+    - **Thresholds**: Custom Warning and Full percentages for each bin.
 - **Empty Bin**: Click the trash can icon to mark a bin as emptied (resolves alerts).
 
 ### BLE Mesh / Gateway Behavior
@@ -126,15 +127,6 @@ npm run dev
 ## API Documentation
 
 See `docs/API.md` for detailed endpoint descriptions.
-cd dashboard
-npm install
-cp .env.example .env
-npm run dev
-
-# 3. Access Dashboard
-# Open http://localhost:3001
-# Login: admin / admin123
-```
 
 **Test without hardware**: Run the bin simulation script included in `SETUP_GUIDE.md`
 
@@ -153,6 +145,11 @@ npm run dev
 - **Alert**: Immediate when bin reaches 85% capacity or Low Battery
 - **Relay Data**: Gateway forwards data from nearby BLE nodes
 
+### Downlink (Server → Bin)
+- **Command Queue**: Server queues commands (Reboot, Config) for offline bins
+- **Piggyback Delivery**: Gateway checks for pending commands in every HTTP response
+- **BLE Propagation**: Gateway relays commands to specific BLE nodes via GATT write
+
 ## Data Flow
 
 1. **Bin Node** measures fill level via ultrasonic sensor
@@ -167,10 +164,8 @@ npm run dev
 ## Future Enhancements
 
 - **Route Optimization**: AI-driven collection route planning using TSP algorithm
-- **Downlink Control**: Remote configuration of reporting intervals and thresholds
 - **OTA Updates**: Over-the-air firmware updates
 - **Machine learning**: Predictive fill patterns based on historical data
-- Solar panel integration for sustainable power
 - Mobile app for custodians
 - Integration with campus facility management system
 - Environmental sensors (temperature, odor detection)

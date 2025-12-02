@@ -8,7 +8,7 @@ const pendingCommandSchema = new mongoose.Schema({
     },
     type: {
         type: String,
-        enum: ['SET_INTERVAL', 'REBOOT', 'SET_THRESHOLD', 'HEIGHT', 'INTERVAL'],
+        enum: ['SET_INTERVAL', 'REBOOT', 'SET_THRESHOLD', 'HEIGHT', 'INTERVAL', 'THRESHOLDS'],
         required: true
     },
     value: {

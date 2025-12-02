@@ -48,6 +48,24 @@
 // ============================================================================
 #define ENABLE_DEEP_SLEEP true          // Enable deep sleep for battery saving
 #define SLEEP_DURATION_SEC 300          // Sleep duration in seconds (5 minutes)
+
+// ============================================================================
+// Hardware Pin Definitions - T3 LoRa32 V1.6.1
+// ============================================================================
+// Ultrasonic Sensor Pins (using available GPIOs)
+#define TRIG_PIN 13          // Ultrasonic sensor trigger pin
+#define ECHO_PIN 15          // Ultrasonic sensor echo pin
+
+// Status LED (built-in LED on T3 LoRa32)
+#define LED_PIN 25           // Built-in blue LED on T3 LoRa32 V1.6.1
+
+// OLED Display Pins (SSD1306 128x64) - I2C
+#define OLED_SDA 21          // I2C Data
+#define OLED_SCL 22          // I2C Clock
+
+// Battery ADC Pin
+#define BATTERY_PIN 35       // ADC pin for battery voltage
+
 #define LOW_BATTERY_THRESHOLD 20        // Battery % to trigger low battery mode
 
 // ============================================================================
@@ -72,17 +90,5 @@
 // ============================================================================
 #define ENABLE_SCREENSAVER false        // Screen burn-in protection (not needed for OLED)
 #define SCREENSAVER_TIMEOUT 60000       // Timeout before turning off display (60 seconds)
-
-// ============================================================================
-// Hardware Pin Definitions - T3 LoRa32 V1.6.1
-// ============================================================================
-// These pins are set in the main .ino file:
-// TRIG_PIN 13          - Ultrasonic trigger pin
-// ECHO_PIN 15          - Ultrasonic echo pin  
-// LED_PIN 25           - Built-in blue LED
-// OLED_SDA 21          - I2C Data for OLED
-// OLED_SCL 22          - I2C Clock for OLED
-// OLED_RST -           - OLED Reset (Not used/Internal)
-// BATTERY_PIN 35       - Battery voltage monitoring (ADC)
 
 #endif // CONFIG_H

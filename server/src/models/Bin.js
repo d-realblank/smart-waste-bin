@@ -78,6 +78,14 @@ const binSchema = new mongoose.Schema({
         type: Number,
         default: 30000 // in milliseconds
     },
+    warningThreshold: {
+        type: Number,
+        default: 70
+    },
+    fullThreshold: {
+        type: Number,
+        default: 85
+    },
     isActive: {
         type: Boolean,
         default: true
@@ -123,15 +131,21 @@ binSchema.methods.updateStatus = function(data) {
     if (data.reportInterval) {
         this.reportInterval = data.reportInterval;
     }
+    if (data.warningThreshold) {
+        this.warningThreshold = data.warningThreshold;
+    }
+    if (data.fullThreshold) {
+        this.fullThreshold = data.fullThreshold;
+    }
     this.lastUpdate = new Date();
     
     // Auto-determine status
     if (data.status) {
         this.status = data.status;
-    } else if (this.fillLevel >= 85) {
+    } else if (this.fillLevel >= (this.fullThreshold || 85)) {
         this.status = 'FULL';
         this.isFull = true;
-    } else if (this.fillLevel >= 70) {
+    } else if (this.fillLevel >= (this.warningThreshold || 70)) {
         this.status = 'WARNING';
         this.isFull = false;
     } else {

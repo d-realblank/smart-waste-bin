@@ -52,6 +52,8 @@ const BinsPage = () => {
   const [configData, setConfigData] = useState({
     height: 100,
     interval: 30,
+    warningThreshold: 70,
+    fullThreshold: 85,
   });
 
   const { socket } = useSocket();
@@ -198,6 +200,8 @@ const BinsPage = () => {
     setConfigData({
       height: bin.binHeight || 100,
       interval: bin.reportInterval ? bin.reportInterval / 1000 : 30,
+      warningThreshold: bin.warningThreshold || 70,
+      fullThreshold: bin.fullThreshold || 85,
     });
     setConfigDialogOpen(true);
   };
@@ -233,6 +237,14 @@ const BinsPage = () => {
         });
       }
 
+      // Send Thresholds Command
+      if (configData.warningThreshold && configData.fullThreshold) {
+        await axios.post(`/api/bins/${configBin.binId}/command`, { 
+          type: 'THRESHOLDS', 
+          value: `${configData.warningThreshold}:${configData.fullThreshold}`
+        });
+      }
+
       toast.success('Configuration commands sent');
       handleCloseConfigDialog();
     } catch (error) {
@@ -251,9 +263,12 @@ const BinsPage = () => {
     }
   };
 
-  const getFillColor = (level) => {
-    if (level >= 85) return 'error';
-    if (level >= 70) return 'warning';
+  const getFillColor = (level, bin) => {
+    const fullThreshold = bin.fullThreshold || 85;
+    const warningThreshold = bin.warningThreshold || 70;
+    
+    if (level >= fullThreshold) return 'error';
+    if (level >= warningThreshold) return 'warning';
     return 'success';
   };
 
@@ -296,8 +311,11 @@ const BinsPage = () => {
                   <Typography color="text.secondary" gutterBottom>
                     Location: {bin.location}
                   </Typography>
-                  <Typography variant="caption" color="text.secondary">
+                  <Typography variant="caption" color="text.secondary" display="block">
                     Height: {bin.binHeight || 100}cm
+                  </Typography>
+                  <Typography variant="caption" color="text.secondary" display="block">
+                    Thresholds: {bin.warningThreshold || 70}% / {bin.fullThreshold || 85}%
                   </Typography>
                   
                   <Box sx={{ mt: 2, mb: 1 }}>
@@ -310,7 +328,7 @@ const BinsPage = () => {
                     <LinearProgress 
                       variant="determinate" 
                       value={bin.fillLevel} 
-                      color={getFillColor(bin.fillLevel)}
+                      color={getFillColor(bin.fillLevel, bin)}
                       sx={{ height: 10, borderRadius: 5 }}
                     />
                   </Box>
@@ -457,7 +475,30 @@ const BinsPage = () => {
             value={configData.interval}
             onChange={handleConfigChange}
             helperText="How often the bin sends status updates"
+            sx={{ mb: 2 }}
           />
+          <Box sx={{ display: 'flex', gap: 2 }}>
+            <TextField
+              margin="dense"
+              name="warningThreshold"
+              label="Warning Threshold (%)"
+              type="number"
+              fullWidth
+              variant="outlined"
+              value={configData.warningThreshold}
+              onChange={handleConfigChange}
+            />
+            <TextField
+              margin="dense"
+              name="fullThreshold"
+              label="Full Threshold (%)"
+              type="number"
+              fullWidth
+              variant="outlined"
+              value={configData.fullThreshold}
+              onChange={handleConfigChange}
+            />
+          </Box>
         </DialogContent>
         <DialogActions>
           <Button onClick={handleCloseConfigDialog}>Cancel</Button>

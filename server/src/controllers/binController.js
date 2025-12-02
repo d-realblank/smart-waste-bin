@@ -81,7 +81,7 @@ exports.createBin = async (req, res, next) => {
 // @access  API Key
 exports.updateBinStatus = async (req, res, next) => {
     try {
-        const { binId, fillLevel, distance, status, batteryLevel, rssi, location, binHeight, reportInterval } = req.body;
+        const { binId, fillLevel, distance, status, batteryLevel, rssi, location, binHeight, reportInterval, warningThreshold, fullThreshold } = req.body;
         
         let bin = await Bin.findOne({ binId });
         
@@ -96,19 +96,38 @@ exports.updateBinStatus = async (req, res, next) => {
                 batteryLevel,
                 rssi,
                 binHeight: binHeight || 100,
-                reportInterval: reportInterval || 30000
+                reportInterval: reportInterval || 30000,
+                warningThreshold: warningThreshold || 70,
+                fullThreshold: fullThreshold || 85
             });
         } else {
             // Update existing bin
             const updateData = {
                 fillLevel,
                 distance,
-                status,
                 batteryLevel,
                 rssi,
                 binHeight,
-                reportInterval
+                reportInterval,
+                warningThreshold,
+                fullThreshold
             };
+            
+            // Recalculate status server-side to ensure consistency with stored thresholds
+            // This overrides the status sent by the bin if it conflicts with server config
+            const activeWarn = bin.warningThreshold || warningThreshold || 70;
+            const activeFull = bin.fullThreshold || fullThreshold || 85;
+            
+            if (fillLevel >= activeFull) {
+                updateData.status = 'FULL';
+                updateData.isFull = true;
+            } else if (fillLevel >= activeWarn) {
+                updateData.status = 'WARNING';
+                updateData.isFull = false;
+            } else {
+                updateData.status = 'NORMAL';
+                updateData.isFull = false;
+            }
             
             // Update location if provided
             if (location) {
@@ -210,6 +229,24 @@ exports.updateBinStatus = async (req, res, next) => {
             } else if (pendingCommand.type === 'INTERVAL') {
                 bin.reportInterval = parseInt(pendingCommand.value);
                 await bin.save();
+            } else if (pendingCommand.type === 'THRESHOLDS') {
+                const [warn, full] = pendingCommand.value.split(':');
+                bin.warningThreshold = parseFloat(warn);
+                bin.fullThreshold = parseFloat(full);
+                
+                // Re-calculate status based on new thresholds
+                if (bin.fillLevel >= bin.fullThreshold) {
+                    bin.status = 'FULL';
+                    bin.isFull = true;
+                } else if (bin.fillLevel >= bin.warningThreshold) {
+                    bin.status = 'WARNING';
+                    bin.isFull = false;
+                } else {
+                    bin.status = 'NORMAL';
+                    bin.isFull = false;
+                }
+                
+                await bin.save();
             }
             
             console.log(`[BinController] Sent command ${pendingCommand.type} to ${binId}`);
@@ -229,7 +266,7 @@ exports.queueCommand = async (req, res, next) => {
         const { type, value } = req.body;
         const { binId } = req.params;
         
-        if (!['SET_INTERVAL', 'REBOOT', 'SET_THRESHOLD', 'HEIGHT', 'INTERVAL'].includes(type)) {
+        if (!['SET_INTERVAL', 'REBOOT', 'SET_THRESHOLD', 'HEIGHT', 'INTERVAL', 'THRESHOLDS'].includes(type)) {
             return res.status(400).json({
                 success: false,
                 message: 'Invalid command type'
