@@ -66,8 +66,11 @@ bool displayAvailable = false;  // Track if display initialized successfully
 // BLE Globals
 // ============================================================================
 BLEScan* pBLEScan;
+BLEAdvertising* pAdvertising;
 unsigned long lastBLEScanTime = 0;
+unsigned long lastAdvertiseUpdate = 0;
 bool deviceConnected = false;
+bool isGatewayMode = false;
 
 
 
@@ -92,7 +95,7 @@ int reconnectAttempts = 0;
 // ============================================================================
 // Function Prototypes
 // ============================================================================
-void setupWiFi();
+bool setupWiFi();
 void setupDisplay();
 void setupSensor();
 float measureDistance();
@@ -105,7 +108,9 @@ void handleServerResponse(String response);
 int getBatteryLevel();
 
 // BLE Functions
-void setupBLE();
+void setupBLEScanner();
+void setupBLEAdvertiser();
+void updateBLEAdvertising();
 void scanForNeighbors();
 void sendNeighborUpdate(String binId, float fillLevel, int batteryLevel, String location);
 
@@ -139,11 +144,28 @@ void setup() {
     
     // Setup components
     setupDisplay();
-    setupWiFi();
     setupSensor();
     
-    if (ENABLE_BLE_MESH) {
-        setupBLE();
+    // Take initial reading
+    float initialDist = measureDistance();
+    currentState.distance = initialDist;
+    currentState.fillLevel = calculateFillLevel(initialDist);
+    currentState.batteryLevel = getBatteryLevel();
+    
+    // Initialize BLE Device (Common for both modes)
+    BLEDevice::init(BLE_MESH_NAME);
+    
+    // Try to connect to WiFi
+    if (setupWiFi()) {
+        isGatewayMode = true;
+        Serial.println("Mode: GATEWAY (WiFi Connected)");
+        if (ENABLE_BLE_MESH) {
+            setupBLEScanner();
+        }
+    } else {
+        isGatewayMode = false;
+        Serial.println("Mode: NODE (WiFi Failed - Using BLE)");
+        setupBLEAdvertiser();
     }
     
     currentState.status = "NORMAL";
@@ -184,43 +206,57 @@ void loop() {
         lastDisplayUpdate = currentTime;
     }
     
-    // Send status update to server
-    if (currentTime - lastReportTime >= REPORT_INTERVAL) {
-        sendStatusUpdate();
-        lastReportTime = currentTime;
-    }
-    
-    // Send immediate alert if bin is full
-    if (currentState.isFull && (currentTime - lastReportTime >= 5000)) {
-        sendAlert();
-        lastReportTime = currentTime;
-    }
-    
-    // Check WiFi connection
-    if (WiFi.status() != WL_CONNECTED) {
-        Serial.println("WiFi disconnected - Attempting reconnect...");
-        setupWiFi();
-    }
-    
-    // BLE Mesh / Gateway Logic
-    if (ENABLE_BLE_MESH) {
-        // If connected to WiFi, act as a Gateway: Scan for neighbors
-        if (WiFi.status() == WL_CONNECTED) {
+    if (isGatewayMode) {
+        // GATEWAY MODE LOGIC
+        
+        // Check WiFi connection
+        if (WiFi.status() != WL_CONNECTED) {
+            Serial.println("WiFi lost! Attempting reconnect...");
+            // Simple reconnect attempt
+            WiFi.reconnect();
+            // If it fails for too long, we might want to switch to BLE mode, 
+            // but for now let's just try to reconnect or sleep.
+        }
+        
+        // Send status update to server
+        if (currentTime - lastReportTime >= REPORT_INTERVAL) {
+            sendStatusUpdate();
+            lastReportTime = currentTime;
+        }
+        
+        // Send immediate alert if bin is full
+        if (currentState.isFull && (currentTime - lastReportTime >= 5000)) {
+            sendAlert();
+            lastReportTime = currentTime;
+        }
+        
+        // BLE Mesh / Gateway Logic
+        if (ENABLE_BLE_MESH) {
             if (currentTime - lastBLEScanTime >= 15000) { // Scan every 15 seconds
                 scanForNeighbors();
                 lastBLEScanTime = currentTime;
             }
         }
+    } else {
+        // NODE MODE LOGIC (BLE Only)
+        
+        // Update BLE Advertisement Data
+        if (currentTime - lastAdvertiseUpdate >= BLE_ADVERTISE_INTERVAL) {
+            updateBLEAdvertising();
+            lastAdvertiseUpdate = currentTime;
+        }
+        
+        // Optional: Periodically try to switch back to Gateway mode?
+        // For now, we stay in BLE mode until reset.
     }
-
     
-    delay(1000); // Main loop delay
+    delay(100); // Main loop delay
 }
 
 // ============================================================================
 // WiFi Setup
 // ============================================================================
-void setupWiFi() {
+bool setupWiFi() {
     Serial.print("Connecting to WiFi: ");
     Serial.println(WIFI_SSID);
     
@@ -228,7 +264,7 @@ void setupWiFi() {
     WiFi.begin(WIFI_SSID, WIFI_PASSWORD);
     
     int attempts = 0;
-    while (WiFi.status() != WL_CONNECTED && attempts < 20) {
+    while (WiFi.status() != WL_CONNECTED && attempts < 10) { // Reduced attempts for faster fallback
         delay(500);
         Serial.print(".");
         attempts++;
@@ -242,15 +278,10 @@ void setupWiFi() {
         Serial.print(WiFi.RSSI());
         Serial.println(" dBm");
         reconnectAttempts = 0;
+        return true;
     } else {
         Serial.println("\nWiFi connection failed!");
-        reconnectAttempts++;
-        
-        // Enter deep sleep if multiple reconnect failures
-        if (reconnectAttempts >= 3) {
-            Serial.println("Multiple WiFi failures - entering sleep mode");
-            enterDeepSleep();
-        }
+        return false;
     }
 }
 
@@ -403,14 +434,17 @@ void updateDisplay() {
     u8g2.print(currentState.distance, 0);
     u8g2.print("cm");
     
-    // Display WiFi status
+    // Display WiFi status or BLE Mode
     u8g2.setCursor(0, 62);
-    if (WiFi.status() == WL_CONNECTED) {
-        u8g2.print("WiFi:");
-        u8g2.print(WiFi.RSSI());
-        u8g2.print("dBm");
+    if (isGatewayMode) {
+        if (WiFi.status() == WL_CONNECTED) {
+            u8g2.print("GW:");
+            u8g2.print(WiFi.RSSI());
+        } else {
+            u8g2.print("GW:NoWiFi");
+        }
     } else {
-        u8g2.print("WiFi:OFF");
+        u8g2.print("Mode: BLE Node");
     }
     
     // Display battery level
@@ -603,19 +637,66 @@ void enterDeepSleep() {
 // BLE Mesh / Gateway Implementation
 // ============================================================================
 
-void setupBLE() {
-    Serial.println("Initializing BLE Gateway...");
+void setupBLEScanner() {
+    Serial.println("Initializing BLE Gateway (Scanner)...");
     
-    BLEDevice::init(BLE_MESH_NAME);
+    // BLEDevice::init(BLE_MESH_NAME); // Already initialized in setup()
     
     // Setup Scanning
     pBLEScan = BLEDevice::getScan();
-    // pBLEScan->setAdvertisedDeviceCallbacks(new MyAdvertisedDeviceCallbacks()); // Removed callback
-    pBLEScan->setActiveScan(true); // Active scan uses more power, but gets results faster
+    pBLEScan->setActiveScan(true);
     pBLEScan->setInterval(100);
-    pBLEScan->setWindow(99);  // less or equal setInterval value
+    pBLEScan->setWindow(99);
     
     Serial.println("BLE Gateway Initialized");
+}
+
+void setupBLEAdvertiser() {
+    Serial.println("Initializing BLE Node (Advertiser)...");
+    
+    // BLEDevice::init(BLE_MESH_NAME); // Already initialized in setup()
+    pAdvertising = BLEDevice::getAdvertising();
+    
+    // Initial payload setup
+    String payload = "BIN:" + String(BIN_ID) + ":" + String(currentState.fillLevel, 1) + ":" + String(currentState.batteryLevel);
+    
+    BLEAdvertisementData oAdvertisementData = BLEAdvertisementData();
+    oAdvertisementData.setFlags(0x04); // BR_EDR_NOT_SUPPORTED
+    oAdvertisementData.setManufacturerData(payload.c_str());
+    
+    pAdvertising->setAdvertisementData(oAdvertisementData);
+    
+    // Use Scan Response for Location Data (Device Name)
+    BLEAdvertisementData oScanResponseData = BLEAdvertisementData();
+    oScanResponseData.setName(BIN_LOCATION);
+    pAdvertising->setScanResponseData(oScanResponseData);
+    
+    pAdvertising->setScanResponse(true);
+    pAdvertising->setMinPreferred(0x06);
+    pAdvertising->setMinPreferred(0x12);
+    
+    BLEDevice::startAdvertising();
+    Serial.println("BLE Advertising started");
+}
+
+void updateBLEAdvertising() {
+    // Payload: "BIN:<ID>:<FILL>:<BAT>"
+    String payload = "BIN:" + String(BIN_ID) + ":" + String(currentState.fillLevel, 1) + ":" + String(currentState.batteryLevel);
+    
+    BLEAdvertisementData oAdvertisementData = BLEAdvertisementData();
+    oAdvertisementData.setFlags(0x04); // BR_EDR_NOT_SUPPORTED
+    oAdvertisementData.setManufacturerData(payload.c_str());
+    
+    // Ensure Scan Response (Location) is also set
+    BLEAdvertisementData oScanResponseData = BLEAdvertisementData();
+    oScanResponseData.setName(BIN_LOCATION);
+    
+    pAdvertising->stop(); // Stop before updating
+    pAdvertising->setAdvertisementData(oAdvertisementData);
+    pAdvertising->setScanResponseData(oScanResponseData);
+    pAdvertising->start(); // Restart
+    
+    Serial.println("BLE Updated: " + payload);
 }
 
 void scanForNeighbors() {
