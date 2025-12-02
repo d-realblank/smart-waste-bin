@@ -10,94 +10,100 @@ A distributed IoT system using sensor-enabled bins with LilyGO TTGO microcontrol
 
 ## System Architecture
 
+The system uses a **Gateway-Node** topology to extend range and reduce power consumption.
+
 ```
-Waste Bin Nodes (TTGO) → WiFi/Bluetooth Mesh → Campus Server (REST API) → Web Dashboard
-      ↓                                                ↓
-  LCD Display                                     Database
-  Ultrasonic Sensor                          (Bin Status, Alerts, Routes)
+[Remote Bin (BLE Node)]  --BLE-->  [Gateway Bin (WiFi + BLE)]  --WiFi/HTTP-->  [Server]  <-->  [Dashboard]
+      (Battery Powered)                   (Mains/Battery)                         (DB)
 ```
+
+- **Gateway Bin**: Connects to WiFi and relays its own data + data from nearby BLE nodes to the server.
+- **Remote Bin**: Operates in low-power mode, advertising sensor data via BLE to be picked up by a Gateway.
 
 ## Key Features
 
-- **Real-time monitoring**: Ultrasonic sensors detect bin fill levels
-- **Wireless communication**: WiFi for uplink/downlink, Bluetooth mesh for bin-to-bin
-- **Smart alerts**: Automatic notifications when bins reach capacity
-- **Route optimization**: AI-driven collection route planning
-- **Web dashboard**: Real-time visualization and management interface
-- **Scalable architecture**: Support for multiple bin nodes
+- **Unified Firmware**: Single firmware (`bin-node`) automatically detects WiFi availability to switch between **Gateway Mode** and **BLE Node Mode**.
+- **Dynamic Location**: Bins transmit their configured location name wirelessly; no hardcoding required on the server.
+- **Real-time Monitoring**: Ultrasonic sensors detect bin fill levels (0-100%).
+- **Smart Alerts**: Automatic generation of alerts for "Full" bins or "Low Battery", pushed instantly to the dashboard via WebSockets.
+- **Web Dashboard**: React-based interface for monitoring bin status, managing alerts, and viewing analytics.
 
 ## Project Structure
 
 ```
-SOEN422Final/
-├── bin-node/              # TTGO microcontroller code (Arduino/C++)
-│   ├── bin-node.ino       # Main firmware
-│   ├── config.h           # Configuration constants
+smart-waste-bin/
+├── bin-node/              # Unified Firmware (Gateway + BLE Node)
+│   ├── bin-node.ino       # Main logic (Auto-switching modes)
+│   ├── config.h           # Configuration (ID, Location, WiFi)
 │   └── README.md          # Hardware setup guide
 ├── server/                # Backend REST API (Node.js/Express)
 │   ├── src/
-│   │   ├── controllers/   # API controllers
-│   │   ├── models/        # Database models
-│   │   ├── routes/        # API routes
-│   │   ├── services/      # Business logic
+│   │   ├── controllers/   # Logic for Bins, Alerts, Auth
+│   │   ├── models/        # MongoDB Schemas (Bin, Alert, History)
+│   │   ├── routes/        # API Endpoints
 │   │   └── server.js      # Entry point
-│   ├── package.json
-│   └── .env.example
-├── dashboard/             # Web frontend (React)
+│   └── package.json
+├── dashboard/             # Web Frontend (React + Vite)
 │   ├── src/
-│   │   ├── components/    # React components
-│   │   ├── pages/         # Page views
-│   │   ├── services/      # API client
-│   │   └── App.jsx        # Main app component
-│   ├── package.json
-│   └── .env.example
-└── docs/                  # Additional documentation
-    ├── API.md             # API documentation
-    ├── HARDWARE.md        # Hardware setup guide
-    └── DEPLOYMENT.md      # Deployment instructions
+│   │   ├── components/    # UI Components
+│   │   ├── pages/         # Dashboard Views
+│   │   └── context/       # Auth & Socket Context
+│   └── package.json
+└── docs/                  # Documentation
 ```
 
 ## Hardware Requirements
 
-- **LilyGO TTGO T-Display** (ESP32-based, 1 per bin)
-- **HC-SR04 Ultrasonic Sensor** (1 per bin)
-- **Built-in WiFi** (integrated in TTGO)
-- **Built-in LCD Display** (integrated in TTGO)
-- **Battery Pack** (rechargeable, optional for wireless operation)
-- **Enclosure** (weatherproof for outdoor deployment)
+- **LilyGO TTGO T3 LoRa32 V1.6.1** (ESP32 + OLED)
+- **HC-SR04 Ultrasonic Sensor**
+- **Micro-USB Cable** (for programming and power)
+- **Battery (Optional)**: 3.7V LiPo for Remote Nodes
 
 ## Software Stack
 
-### Bin Node
-- **Language**: Arduino C++
-- **Platform**: ESP32 (TTGO)
-- **Libraries**: WiFi.h, TFT_eSPI, BLEMesh
+### Firmware
+- **Platform**: Arduino (ESP32)
+- **Libraries**: `WiFi`, `HTTPClient`, `ArduinoJson`, `U8g2` (OLED), `BLEDevice`
 
 ### Server
 - **Runtime**: Node.js
 - **Framework**: Express.js
-- **Database**: MongoDB or PostgreSQL
+- **Database**: MongoDB
 - **Real-time**: Socket.IO
 
 ### Dashboard
-- **Framework**: React
-- **State Management**: Redux or Context API
-- **UI Library**: Material-UI or Tailwind CSS
-- **Charts**: Chart.js or Recharts
+- **Framework**: React (Vite)
+- **UI Library**: Material-UI (MUI)
+- **HTTP Client**: Axios
 
-## Quick Start (Without Hardware)
+## Quick Start
 
-**Complete setup guide**: See `SETUP_GUIDE.md` for detailed instructions
-
+### 1. Server Setup
 ```bash
-# 1. Server Setup (5 minutes)
 cd server
 npm install
-cp .env.example .env
-# Edit .env with your database URI
+# Ensure MongoDB is running
 npm run dev
+```
 
-# 2. Dashboard Setup (3 minutes)
+### 2. Dashboard Setup
+```bash
+cd dashboard
+npm install
+npm run dev
+```
+
+### 3. Firmware Setup
+1. Open `bin-node/config.h`.
+2. Configure `WIFI_SSID` and `WIFI_PASSWORD`.
+3. Set `BIN_ID` and `BIN_LOCATION`.
+4. Upload to your ESP32 board.
+   - **Gateway**: Will connect to WiFi and show "GW: -xx dBm".
+   - **Node**: If WiFi fails, will switch to "Mode: BLE Node".
+
+## API Documentation
+
+See `docs/API.md` for detailed endpoint descriptions.
 cd dashboard
 npm install
 cp .env.example .env
