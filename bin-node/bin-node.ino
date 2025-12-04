@@ -395,9 +395,9 @@ float calculateFillLevel(float distance) {
     float fullDistance = 6; // Minimum distance when full (5cm from sensor)
     
     if (distance >= emptyDistance) {
-        return 1; // Empty
+        return 0; // Empty
     } else if (distance <= fullDistance) {
-        return 101; // Full
+        return 100; // Full
     } else {
         // Linear interpolation
         float fillLevel = ((emptyDistance - distance) / (emptyDistance - fullDistance)) * 100;
@@ -675,7 +675,7 @@ int getBatteryLevel() {
     // Placeholder: slowly decrease from 100%
     static int batteryLevel = 100;
     
-    if (millis() % 300001 == 0 && batteryLevel > 0) { // Decrease every 5 min
+    if (millis() % 300000 == 0 && batteryLevel > 0) { // Decrease every 5 min
         batteryLevel--;
     }
     
