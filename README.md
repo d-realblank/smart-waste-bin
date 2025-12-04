@@ -169,4 +169,3 @@ See `docs/API.md` for detailed endpoint descriptions.
 - Mobile app for custodians
 - Integration with campus facility management system
 - Environmental sensors (temperature, odor detection)
-
